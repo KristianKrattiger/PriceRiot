@@ -1,5 +1,6 @@
 CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: \
  C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\sim.cpp \
+ C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/include/sim.h \
  C:/MinGW/mingw64/include/c++/14.2.0/iostream \
  C:/MinGW/mingw64/include/c++/14.2.0/bits/requires_hosted.h \
  C:/MinGW/mingw64/include/c++/14.2.0/x86_64-w64-mingw32/bits/c++config.h \
@@ -208,4 +209,13 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: \
  C:/MinGW/mingw64/include/c++/14.2.0/bits/unique_ptr.h \
  C:/MinGW/mingw64/include/c++/14.2.0/ext/aligned_buffer.h \
  C:/MinGW/mingw64/include/c++/14.2.0/bits/fs_dir.h \
- C:/MinGW/mingw64/include/c++/14.2.0/bits/fs_ops.h
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/fs_ops.h \
+ C:/MinGW/mingw64/include/c++/14.2.0/thread \
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/std_thread.h \
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/this_thread_sleep.h \
+ C:/MinGW/mingw64/include/c++/14.2.0/map \
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_tree.h \
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/node_handle.h \
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_map.h \
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_multimap.h \
+ C:/MinGW/mingw64/include/c++/14.2.0/bits/erase_if.h

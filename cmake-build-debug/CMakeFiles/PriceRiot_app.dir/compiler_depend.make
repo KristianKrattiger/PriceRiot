@@ -19,6 +19,7 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/De
   C:/MinGW/mingw64/include/c++/14.2.0/bits/cpp_type_traits.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/cxxabi_forced.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/cxxabi_init_exception.h \
+  C:/MinGW/mingw64/include/c++/14.2.0/bits/erase_if.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/exception.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/exception_defines.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/exception_ptr.h \
@@ -46,6 +47,7 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/De
   C:/MinGW/mingw64/include/c++/14.2.0/bits/move.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/nested_exception.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/new_allocator.h \
+  C:/MinGW/mingw64/include/c++/14.2.0/bits/node_handle.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/ostream.tcc \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/ostream_insert.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/parse_numbers.h \
@@ -63,6 +65,7 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/De
   C:/MinGW/mingw64/include/c++/14.2.0/bits/specfun.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/sstream.tcc \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/std_abs.h \
+  C:/MinGW/mingw64/include/c++/14.2.0/bits/std_thread.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_algobase.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_bvector.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_construct.h \
@@ -70,14 +73,18 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/De
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_iterator.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_iterator_base_funcs.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_iterator_base_types.h \
+  C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_map.h \
+  C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_multimap.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_numeric.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_pair.h \
+  C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_tree.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_uninitialized.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_vector.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/streambuf.tcc \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/streambuf_iterator.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/string_view.tcc \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/stringfwd.h \
+  C:/MinGW/mingw64/include/c++/14.2.0/bits/this_thread_sleep.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/uniform_int_dist.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/unique_ptr.h \
   C:/MinGW/mingw64/include/c++/14.2.0/bits/uses_allocator.h \
@@ -119,6 +126,7 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/De
   C:/MinGW/mingw64/include/c++/14.2.0/istream \
   C:/MinGW/mingw64/include/c++/14.2.0/limits \
   C:/MinGW/mingw64/include/c++/14.2.0/locale \
+  C:/MinGW/mingw64/include/c++/14.2.0/map \
   C:/MinGW/mingw64/include/c++/14.2.0/new \
   C:/MinGW/mingw64/include/c++/14.2.0/numeric \
   C:/MinGW/mingw64/include/c++/14.2.0/ostream \
@@ -134,6 +142,7 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/De
   C:/MinGW/mingw64/include/c++/14.2.0/string \
   C:/MinGW/mingw64/include/c++/14.2.0/string_view \
   C:/MinGW/mingw64/include/c++/14.2.0/system_error \
+  C:/MinGW/mingw64/include/c++/14.2.0/thread \
   C:/MinGW/mingw64/include/c++/14.2.0/tr1/bessel_function.tcc \
   C:/MinGW/mingw64/include/c++/14.2.0/tr1/beta_function.tcc \
   C:/MinGW/mingw64/include/c++/14.2.0/tr1/ell_integral.tcc \
@@ -210,7 +219,8 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/De
   C:/MinGW/mingw64/x86_64-w64-mingw32/include/time.h \
   C:/MinGW/mingw64/x86_64-w64-mingw32/include/vadefs.h \
   C:/MinGW/mingw64/x86_64-w64-mingw32/include/wchar.h \
-  C:/MinGW/mingw64/x86_64-w64-mingw32/include/wctype.h
+  C:/MinGW/mingw64/x86_64-w64-mingw32/include/wctype.h \
+  C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/include/sim.h
 
 
 C:/MinGW/mingw64/x86_64-w64-mingw32/include/stdint.h:
@@ -291,6 +301,8 @@ C:/MinGW/mingw64/include/c++/14.2.0/bits/fs_ops.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/cxxabi_init_exception.h:
 
+C:/MinGW/mingw64/include/c++/14.2.0/bits/erase_if.h:
+
 C:/MinGW/mingw64/include/c++/14.2.0/bits/exception_defines.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/fstream.tcc:
@@ -303,23 +315,19 @@ C:/MinGW/mingw64/include/c++/14.2.0/stdlib.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/fs_fwd.h:
 
-C:/MinGW/mingw64/include/c++/14.2.0/x86_64-w64-mingw32/bits/cpu_defines.h:
-
-C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_bvector.h:
-
 C:/MinGW/mingw64/include/c++/14.2.0/bits/localefwd.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/locale_facets_nonio.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/fs_path.h:
 
+C:/MinGW/mingw64/include/c++/14.2.0/map:
+
 C:/MinGW/mingw64/include/c++/14.2.0/bits/functexcept.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/std_abs.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/functional_hash.h:
-
-C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_algobase.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/parse_numbers.h:
 
@@ -342,6 +350,8 @@ C:/MinGW/mingw64/include/c++/14.2.0/bits/memory_resource.h:
 C:/MinGW/mingw64/include/c++/14.2.0/bits/memoryfwd.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/move.h:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/node_handle.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/ostream.tcc:
 
@@ -369,6 +379,16 @@ C:/MinGW/mingw64/include/c++/14.2.0/bits/shared_ptr_base.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/sstream.tcc:
 
+C:/MinGW/mingw64/include/c++/14.2.0/concepts:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/std_thread.h:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_algobase.h:
+
+C:/MinGW/mingw64/include/c++/14.2.0/x86_64-w64-mingw32/bits/cpu_defines.h:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_bvector.h:
+
 C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_construct.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_function.h:
@@ -383,9 +403,17 @@ C:/MinGW/mingw64/include/c++/14.2.0/random:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_iterator_base_types.h:
 
+C:/MinGW/mingw64/include/c++/14.2.0/streambuf:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_map.h:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_multimap.h:
+
 C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_numeric.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_pair.h:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_tree.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/stl_uninitialized.h:
 
@@ -400,6 +428,8 @@ C:/MinGW/mingw64/include/c++/14.2.0/bits/streambuf_iterator.h:
 C:/MinGW/mingw64/include/c++/14.2.0/bits/string_view.tcc:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/stringfwd.h:
+
+C:/MinGW/mingw64/include/c++/14.2.0/bits/this_thread_sleep.h:
 
 C:/MinGW/mingw64/include/c++/14.2.0/bits/uniform_int_dist.h:
 
@@ -432,8 +462,6 @@ C:/MinGW/mingw64/include/c++/14.2.0/clocale:
 C:/MinGW/mingw64/include/c++/14.2.0/cmath:
 
 C:/MinGW/mingw64/include/c++/14.2.0/codecvt:
-
-C:/MinGW/mingw64/include/c++/14.2.0/concepts:
 
 C:/MinGW/mingw64/include/c++/14.2.0/cstddef:
 
@@ -513,9 +541,9 @@ C:/MinGW/mingw64/include/c++/14.2.0/sstream:
 
 C:/MinGW/mingw64/include/c++/14.2.0/stdexcept:
 
-C:/MinGW/mingw64/include/c++/14.2.0/streambuf:
-
 C:/MinGW/mingw64/include/c++/14.2.0/string:
+
+C:/MinGW/mingw64/include/c++/14.2.0/thread:
 
 C:/MinGW/mingw64/include/c++/14.2.0/tr1/ell_integral.tcc:
 
@@ -632,3 +660,5 @@ C:/MinGW/mingw64/x86_64-w64-mingw32/include/sys/timeb.h:
 C:/MinGW/mingw64/x86_64-w64-mingw32/include/wchar.h:
 
 C:/MinGW/mingw64/x86_64-w64-mingw32/include/wctype.h:
+
+C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/include/sim.h:

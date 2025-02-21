@@ -2,6 +2,6 @@
 -- pybind11 v3.0.0 dev1
 -- pybind11::lto disabled (problems with undefined symbols for MinGW for now)
 -- pybind11::thin_lto disabled (problems with undefined symbols for MinGW for now)
--- Configuring done (0.5s)
+-- Configuring done (0.6s)
 -- Generating done (0.1s)
 -- Build files have been written to: C:/Users/krist/OneDrive/Desktop/PriceRiot/cmake-build-debug

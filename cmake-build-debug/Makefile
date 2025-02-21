@@ -116,19 +116,6 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named mycppmodule
-
-# Build rule for target.
-mycppmodule: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 mycppmodule
-.PHONY : mycppmodule
-
-# fast build rule for target.
-mycppmodule/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\mycppmodule.dir\build.make CMakeFiles/mycppmodule.dir/build
-.PHONY : mycppmodule/fast
-
-#=============================================================================
 # Target rules for targets named PriceRiot_app
 
 # Build rule for target.
@@ -140,6 +127,19 @@ PriceRiot_app: cmake_check_build_system
 PriceRiot_app/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\PriceRiot_app.dir\build.make CMakeFiles/PriceRiot_app.dir/build
 .PHONY : PriceRiot_app/fast
+
+#=============================================================================
+# Target rules for targets named mycppmodule
+
+# Build rule for target.
+mycppmodule: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 mycppmodule
+.PHONY : mycppmodule
+
+# fast build rule for target.
+mycppmodule/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\mycppmodule.dir\build.make CMakeFiles/mycppmodule.dir/build
+.PHONY : mycppmodule/fast
 
 src/cxx/src/module.obj: src/cxx/src/module.cpp.obj
 .PHONY : src/cxx/src/module.obj

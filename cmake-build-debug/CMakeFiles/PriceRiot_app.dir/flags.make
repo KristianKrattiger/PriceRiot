@@ -4,7 +4,7 @@
 # compile CXX with C:/MinGW/mingw64/bin/g++.exe
 CXX_DEFINES = 
 
-CXX_INCLUDES = 
+CXX_INCLUDES = @CMakeFiles/PriceRiot_app.dir/includes_CXX.rsp
 
 CXX_FLAGS = -g -std=gnu++17 -fdiagnostics-color=always
 
