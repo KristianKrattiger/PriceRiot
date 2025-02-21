@@ -6,8 +6,12 @@ set(CMAKE_CXX_STANDARD 17)
 # Add pybind11 as a subdirectory
 add_subdirectory(pybind11)
 
-# Create the executable target for your simulation
-add_executable(PriceRiot_app src/cxx/src/sim.cpp)
+# Create the executable target for your simulation, including all relevant source files.
+add_executable(PriceRiot_app
+        src/cxx/src/main.cpp
+        src/cxx/src/products.cpp
+        src/cxx/src/sim.cpp
+)
 target_include_directories(PriceRiot_app PRIVATE ${PROJECT_SOURCE_DIR}/src/cxx/include)
 
 # Create the pybind11 module target

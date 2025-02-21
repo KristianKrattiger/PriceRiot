@@ -1,97 +1,74 @@
 #include "products.h"
-#include <cstdio>
 using namespace std;
 
-void Products::addProduct(const string& productName, double price, const string& category) {
-  productsMap[productName] = {price, category};
+Products::Products() {
+    addProduct(1, "Widget", 19.99, "Gadgets");
+    addProduct(2, "Gizmo", 29.99, "Gadgets");
+    addProduct(3, "Doohickey", 9.99, "Accessories");
 }
 
-bool Products::removeProduct(const string& productName) {
-  auto it = productsMap.find(productName);
-  if (it != productsMap.end()) {
-    productsMap.erase(it);
-    return true;
-  }
-  return false;
+void Products::addProduct(int id, const std::string& name, double price, const std::string& category) {
+    Product prod { id, name, category, price };
+    productsMap[id] = prod;
 }
 
-ProductDetail Products::getProduct(const string& productName) const{
-  auto it = productsMap.find(productName);
-  if (it != productsMap.end()) {
+bool Products::removeProduct(int id) {
+    return productsMap.erase(id) > 0;
+}
+
+Product Products::getProduct(int id) const {
+    auto it = productsMap.find(id);
+    if(it == productsMap.end()){
+        throw std::runtime_error("Product not found");
+    }
     return it->second;
-  }
-  throw std::runtime_error("Product not found: " + productName);
 }
 
-bool Products::productExists(const string& productName) const{
-  return (productsMap.find(productName) != productsMap.end());
+string Products::getProductCategory(int id) const {
+  auto it = productsMap.find(id);
+  if(it == productsMap.end()){
+    throw std::runtime_error("Product not found");
+  }
+  return it->second.category;
 }
 
-bool Products::updatePrice(const std::string& productName, double newPrice) {
-  auto it = productsMap.find(productName);
-  if (it != productsMap.end()) {
-    it->second.price = newPrice;
-    return true;
+double Products::getProductPrice(int id) const {
+  auto it = productsMap.find(id);
+  if(it == productsMap.end()){
+    throw std::runtime_error("Product not found");
   }
-  return false;
+  return it->second.price;
 }
 
-bool Products::updateCategory(const std::string& productName, const std::string& newCategory) {
-  auto it = productsMap.find(productName);
-  if (it != productsMap.end()) {
-    it->second.category = newCategory;
-  }
-  return false;
+bool Products::productExists(int id) const {
+    return productsMap.find(id) != productsMap.end();
+}
+
+bool Products::updatePrice(int id, double newPrice) {
+    auto it = productsMap.find(id);
+    if(it != productsMap.end()){
+        it->second.price = newPrice;
+        return true;
+    }
+    return false;
+}
+
+bool Products::updateCategory(int id, const std::string& newCategory) {
+    auto it = productsMap.find(id);
+    if(it != productsMap.end()){
+        it->second.category = newCategory;
+        return true;
+    }
+    return false;
 }
 
 void Products::printProducts() const {
-  cout << "Products: " << endl;
-  cout << productsMap.size() << endl;
-  cout << "===================================================================" << endl;
-  for (auto it = productsMap.begin(); it != productsMap.end(); it++) {
-    cout << "Name: " << it->first << endl;
-    cout << "Category: " << it->second.category << endl;
-    cout << "Price: " << it->second.price << endl;
-    cout << endl;
-    cout << "===================================================================" << endl;
-  }
-}
-
-int main() {
-  Products store;
-
-  // Add some products
-  store.addProduct("Laptop", 1200.99, "Electronics");
-  store.addProduct("Chair", 89.99, "Furniture");
-  store.addProduct("Coffee", 4.99, "Beverages");
-
-  // Display all products
-  std::cout << "Initial product list:" << std::endl;
-  store.printProducts();
-
-  // Update product information
-  store.updatePrice("Laptop", 1100.50);
-  store.updateCategory("Chair", "Office Furniture");
-
-  std::cout << "\nAfter updates:" << std::endl;
-  store.printProducts();
-
-  // Remove a product
-  if (store.removeProduct("Coffee")) {
-    std::cout << "\nAfter removal of Coffee:" << std::endl;
-    store.printProducts();
-  } else {
-    std::cout << "\nCoffee was not found in the store." << std::endl;
-  }
-
-  // Access a single product's details
-  try {
-    ProductDetail laptopDetails = store.getProduct("Laptop");
-    std::cout << "\nLaptop details - Price: " << laptopDetails.price
-              << ", Category: " << laptopDetails.category << std::endl;
-  } catch (const std::runtime_error &e) {
-    std::cerr << e.what() << std::endl;
-  }
-
-  return 0;
+    for(const auto &pair : productsMap) {
+        const Product &p = pair.second;
+        std::cout << "ID: " << p.id
+                  << ", Name: " << p.name
+                  << ", Category: " << p.category
+                  << ", Price: $" << std::fixed << std::setprecision(2) << p.price
+                  << std::endl;
+    }
 }

@@ -3,36 +3,54 @@
 
 #include <string>
 #include <map>
-#include <iostream>
 #include <stdexcept>
+#include <iostream>
+#include <iomanip>
+
 // Structure holding the details for a product
-struct ProductDetail {
-    double price;
+struct Product {
+    int id;
+    std::string name;
     std::string category;
+    double price;
 };
 
 class Products {
 public:
-    // Add a new product or update an existing one
-    void addProduct(const std::string& productName, double price, const std::string& category);
+    // Constructor that initializes the products map with a few starter products
+    Products();
 
-    // Remove a product by name; returns true if removal was successful
-    bool removeProduct(const std::string& productName);
+    // Add a new product (or update an existing one by id)
+    void addProduct(int id, const std::string& name, double price, const std::string& category);
 
-    // Retrieve the product detail (price and category) for a given product
-    // Throws a runtime_error if the product is not found.
-    ProductDetail getProduct(const std::string& productName) const;
+    // Remove a product by id; returns true if removal was successful
+    bool removeProduct(int id);
 
-    bool productExists(const std::string& productName) const;
+    // Retrieve a product by id; throws a runtime_error if not found.
+    Product getProduct(int id) const;
 
-    bool updatePrice(const std::string& productName, double newPrice);
+    std::string getProductCategory(int id) const;
 
-    bool updateCategory(const std::string& productName, const std::string& newCategory);
+    double getProductPrice(int id) const;
 
+    // Check if a product exists by id
+    bool productExists(int id) const;
+
+    // Update the price of a product by id
+    bool updatePrice(int id, double newPrice);
+
+    // Update the category of a product by id
+    bool updateCategory(int id, const std::string& newCategory);
+
+    // Print all products
     void printProducts() const;
 
+    const std::map<int, Product>& getProductsMap() const {
+        return productsMap;
+    }
+
 private:
-    std::map<std::string, ProductDetail> productsMap;
+    std::map<int, Product> productsMap;
 };
 
 #endif // PRODUCTS_H

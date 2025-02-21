@@ -68,11 +68,41 @@ include CMakeFiles/PriceRiot_app.dir/progress.make
 # Include the compile flags for this target's objects.
 include CMakeFiles/PriceRiot_app.dir/flags.make
 
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj: CMakeFiles/PriceRiot_app.dir/flags.make
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj: CMakeFiles/PriceRiot_app.dir/includes_CXX.rsp
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj: C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/src/main.cpp
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj: CMakeFiles/PriceRiot_app.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\krist\OneDrive\Desktop\PriceRiot\cmake-build-debug\CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj"
+	C:\MinGW\mingw64\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj -MF CMakeFiles\PriceRiot_app.dir\src\cxx\src\main.cpp.obj.d -o CMakeFiles\PriceRiot_app.dir\src\cxx\src\main.cpp.obj -c C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\main.cpp
+
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.i"
+	C:\MinGW\mingw64\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\main.cpp > CMakeFiles\PriceRiot_app.dir\src\cxx\src\main.cpp.i
+
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.s"
+	C:\MinGW\mingw64\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\main.cpp -o CMakeFiles\PriceRiot_app.dir\src\cxx\src\main.cpp.s
+
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj: CMakeFiles/PriceRiot_app.dir/flags.make
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj: CMakeFiles/PriceRiot_app.dir/includes_CXX.rsp
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj: C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/src/products.cpp
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj: CMakeFiles/PriceRiot_app.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\krist\OneDrive\Desktop\PriceRiot\cmake-build-debug\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj"
+	C:\MinGW\mingw64\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj -MF CMakeFiles\PriceRiot_app.dir\src\cxx\src\products.cpp.obj.d -o CMakeFiles\PriceRiot_app.dir\src\cxx\src\products.cpp.obj -c C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\products.cpp
+
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.i"
+	C:\MinGW\mingw64\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\products.cpp > CMakeFiles\PriceRiot_app.dir\src\cxx\src\products.cpp.i
+
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.s"
+	C:\MinGW\mingw64\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\products.cpp -o CMakeFiles\PriceRiot_app.dir\src\cxx\src\products.cpp.s
+
 CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: CMakeFiles/PriceRiot_app.dir/flags.make
 CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: CMakeFiles/PriceRiot_app.dir/includes_CXX.rsp
 CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/src/sim.cpp
 CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: CMakeFiles/PriceRiot_app.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\krist\OneDrive\Desktop\PriceRiot\cmake-build-debug\CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\krist\OneDrive\Desktop\PriceRiot\cmake-build-debug\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj"
 	C:\MinGW\mingw64\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj -MF CMakeFiles\PriceRiot_app.dir\src\cxx\src\sim.cpp.obj.d -o CMakeFiles\PriceRiot_app.dir\src\cxx\src\sim.cpp.obj -c C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\sim.cpp
 
 CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.i: cmake_force
@@ -85,17 +115,21 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.s: cmake_force
 
 # Object files for target PriceRiot_app
 PriceRiot_app_OBJECTS = \
+"CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj" \
+"CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj" \
 "CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj"
 
 # External object files for target PriceRiot_app
 PriceRiot_app_EXTERNAL_OBJECTS =
 
+PriceRiot_app.exe: CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj
+PriceRiot_app.exe: CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj
 PriceRiot_app.exe: CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj
 PriceRiot_app.exe: CMakeFiles/PriceRiot_app.dir/build.make
 PriceRiot_app.exe: CMakeFiles/PriceRiot_app.dir/linkLibs.rsp
 PriceRiot_app.exe: CMakeFiles/PriceRiot_app.dir/objects1.rsp
 PriceRiot_app.exe: CMakeFiles/PriceRiot_app.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\krist\OneDrive\Desktop\PriceRiot\cmake-build-debug\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable PriceRiot_app.exe"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\krist\OneDrive\Desktop\PriceRiot\cmake-build-debug\CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable PriceRiot_app.exe"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles\PriceRiot_app.dir\link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

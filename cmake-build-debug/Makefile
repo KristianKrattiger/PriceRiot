@@ -141,6 +141,30 @@ mycppmodule/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\mycppmodule.dir\build.make CMakeFiles/mycppmodule.dir/build
 .PHONY : mycppmodule/fast
 
+src/cxx/src/main.obj: src/cxx/src/main.cpp.obj
+.PHONY : src/cxx/src/main.obj
+
+# target to build an object file
+src/cxx/src/main.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\PriceRiot_app.dir\build.make CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj
+.PHONY : src/cxx/src/main.cpp.obj
+
+src/cxx/src/main.i: src/cxx/src/main.cpp.i
+.PHONY : src/cxx/src/main.i
+
+# target to preprocess a source file
+src/cxx/src/main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\PriceRiot_app.dir\build.make CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.i
+.PHONY : src/cxx/src/main.cpp.i
+
+src/cxx/src/main.s: src/cxx/src/main.cpp.s
+.PHONY : src/cxx/src/main.s
+
+# target to generate assembly for a file
+src/cxx/src/main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\PriceRiot_app.dir\build.make CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.s
+.PHONY : src/cxx/src/main.cpp.s
+
 src/cxx/src/module.obj: src/cxx/src/module.cpp.obj
 .PHONY : src/cxx/src/module.obj
 
@@ -164,6 +188,30 @@ src/cxx/src/module.s: src/cxx/src/module.cpp.s
 src/cxx/src/module.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\mycppmodule.dir\build.make CMakeFiles/mycppmodule.dir/src/cxx/src/module.cpp.s
 .PHONY : src/cxx/src/module.cpp.s
+
+src/cxx/src/products.obj: src/cxx/src/products.cpp.obj
+.PHONY : src/cxx/src/products.obj
+
+# target to build an object file
+src/cxx/src/products.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\PriceRiot_app.dir\build.make CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj
+.PHONY : src/cxx/src/products.cpp.obj
+
+src/cxx/src/products.i: src/cxx/src/products.cpp.i
+.PHONY : src/cxx/src/products.i
+
+# target to preprocess a source file
+src/cxx/src/products.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\PriceRiot_app.dir\build.make CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.i
+.PHONY : src/cxx/src/products.cpp.i
+
+src/cxx/src/products.s: src/cxx/src/products.cpp.s
+.PHONY : src/cxx/src/products.s
+
+# target to generate assembly for a file
+src/cxx/src/products.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\PriceRiot_app.dir\build.make CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.s
+.PHONY : src/cxx/src/products.cpp.s
 
 src/cxx/src/sim.obj: src/cxx/src/sim.cpp.obj
 .PHONY : src/cxx/src/sim.obj
@@ -199,9 +247,15 @@ help:
 	@echo ... rebuild_cache
 	@echo ... PriceRiot_app
 	@echo ... mycppmodule
+	@echo ... src/cxx/src/main.obj
+	@echo ... src/cxx/src/main.i
+	@echo ... src/cxx/src/main.s
 	@echo ... src/cxx/src/module.obj
 	@echo ... src/cxx/src/module.i
 	@echo ... src/cxx/src/module.s
+	@echo ... src/cxx/src/products.obj
+	@echo ... src/cxx/src/products.i
+	@echo ... src/cxx/src/products.s
 	@echo ... src/cxx/src/sim.obj
 	@echo ... src/cxx/src/sim.i
 	@echo ... src/cxx/src/sim.s

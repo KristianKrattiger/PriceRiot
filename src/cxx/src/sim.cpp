@@ -1,5 +1,15 @@
 #include "sim.h"
 #include "products.h"
+#include <iostream>
+#include <vector>
+#include <random>
+#include <chrono>
+#include <iomanip>
+#include <fstream>
+#include <sstream>
+#include <thread>
+
+using namespace std;
 
 vector<Customer> loadCustomersFromCSV(const string &filename) {
     vector<Customer> customers;
@@ -63,45 +73,71 @@ vector<Transaction> loadTransactionsFromCSV(const string &filename) {
     return transactions;
 }
 
-double simulateTransactionAmount(double baseAmount, double volatility,
-                                 default_random_engine &engine) {
-    normal_distribution<double> distribution(baseAmount, volatility);
-    return distribution(engine);
-}
+Transaction randomTransaction(vector<Customer>& customers, vector<Transaction>& transactions,
+                                const map<int, Product>& productsMap,
+                                default_random_engine &engine) {
+    Transaction newTransaction;
+    Customer* transCustomer = nullptr;
 
-int main () {
-    vector<Customer> customers =
-        loadCustomersFromCSV(R"(..\src\python\data\raw\customer_stats.csv)");
-    vector<Transaction> transactions =
-        loadTransactionsFromCSV(R"(..\src\python\data\processed\transaction_info.csv)");
+    uniform_int_distribution<int> actionDist(0, 1); // New customer or use existing one?
+    if (int action = actionDist(engine); action == 0) { // New customer
+        auto newCust = Customer();
+        uniform_int_distribution<int> ageDist(18, 75);
+        uniform_int_distribution<int> genderDist(0, 1);
 
-    default_random_engine engine(chrono::system_clock::now().time_since_epoch().count());
-    uniform_int_distribution<int> actionDist(0, 1);
-    uniform_int_distribution<int> ageDist(18, 80);
-    uniform_int_distribution<int> numPurchasesDist(1, 50);
-    uniform_int_distribution<int> productDist(1, 50);
-    uniform_real_distribution<double> incomeDist(10.0, 200.0);
-
-    // Output loaded customer data
-    for (auto &customer : customers) {
-        cout << "Customer ID: " << customer.id
-             << ", Annual Income: " << customer.annualIncome
-             << ", Total Spent: " << customer.totalSpent
-             << ", Average Spend: " << customer.averageSpend
-             << ", Last Purchase: " << customer.lastPurchaseInDays
-             << ", Age: " << customer.age << endl;
+        // Generate customer starter data
+        newCust.id = customers.empty() ? 1 : customers.back().id + 1;
+        newCust.age = ageDist(engine);
+        newCust.gender = genderDist(engine) ? "Male" : "Female";
+        customers.push_back(newCust);
+        transCustomer = &customers.back();
+    }else {
+        // Use an existing customer
+        if (customers.empty()) {
+            throw runtime_error("No customers available to select from.");
+        }
+        uniform_int_distribution<size_t> custIndexDist(0, customers.size() - 1);
+        transCustomer = &customers[custIndexDist(engine)];
     }
+    newTransaction.custID = transCustomer->id;
+    newTransaction.transID = transactions.empty() ? 1 : transactions.back().transID + 1;
 
-    // Output loaded transaction data
-    for (auto &transaction : transactions) {
-        cout << "Transaction ID: " << transaction.transID
-             << ", CustID: " << transaction.custID
-             << ", Product Category: " << transaction.productCategory
-             << ", Quantity: " << transaction.quantity
-             << ", Price per unit: " << transaction.pricePerUnit
-             << ", Total transaction amount: " << transaction.totalSpent
-             << ", Purchase date: " << transaction.timestamp << endl;
+    if (productsMap.empty()) {
+        throw runtime_error("No products available to select from.");
     }
+    uniform_int_distribution<size_t> productIndexDist(0, productsMap.size() - 1);
+    size_t productIndex = productIndexDist(engine);
+    auto it = productsMap.begin();
+    advance(it, productIndex);
+    const Product& selectedProduct = it->second;
 
-    return 0;
+    //set related details
+    newTransaction.productCategory = selectedProduct.category;
+    newTransaction.pricePerUnit = selectedProduct.price;
+
+    // Pick qty
+    uniform_int_distribution<size_t> qtyDist(0, 100);
+    newTransaction.quantity = qtyDist(engine);
+
+    // Calculate price of order
+    newTransaction.totalSpent = newTransaction.quantity * newTransaction.pricePerUnit;
+
+    // Generate satisfaction rating
+    uniform_int_distribution<int> satisfactionDist(1, 10);
+    newTransaction.satisfaction = satisfactionDist(engine);
+
+    // Generate timestamp in "YYYY-MM-DD HH:MM:SS" format
+    auto now = chrono::system_clock::now();
+    time_t now_time = chrono::system_clock::to_time_t(now);
+    tm local_tm;
+#ifdef _WIN32
+    localtime_s(&local_tm, &now_time);
+#else
+    localtime_r(&now_time, &local_tm);
+#endif
+    ostringstream oss;
+    oss << put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
+    newTransaction.timestamp = oss.str();
+
+    return newTransaction;
 }

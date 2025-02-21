@@ -1,26 +1,19 @@
 #ifndef SIM_H
 #define SIM_H
 
-#include <iostream>
 #include <vector>
-#include <random>
-#include <chrono>
-#include <iomanip>
-#include <fstream>
-#include <sstream>
 #include <filesystem>
-#include <thread>
 #include <map>
 #include <string>
+#include <random>
 #include "products.h"
-using namespace std;
 
 struct Customer {
     int id{};
     double annualIncome{}, totalSpent{}, averageSpend{};
     int yearsAsCust{}, numPurchases{}, numReturns{},
         numSprtContacts{}, lastPurchaseInDays{}, age{};
-    string gender, promotionResponse;
+    std::string gender, promotionResponse;
     bool optIn{}, churn{};
 };
 
@@ -28,12 +21,13 @@ struct Transaction {
     int custID{}, transID{};
     double amount{}, pricePerUnit{}, totalSpent{};
     int quantity{}, satisfaction{};
-    string productCategory, timestamp;
+    std::string productCategory, timestamp;
 };
 
-vector<Customer> loadCustomersFromCSV(const string &filename);
-vector<Transaction> loadTransactionsFromCSV(const string &filename);
-double simulateTransactionAmount(double baseAmount, double volatility,
-                                 default_random_engine &engine);
+std::vector<Customer> loadCustomersFromCSV(const std::string &filename);
+std::vector<Transaction> loadTransactionsFromCSV(const std::string &filename);
+Transaction randomTransaction(std::vector<Customer>& customers, std::vector<Transaction>& transactions,
+                                const std::map<int, Product>& productsMap,
+                                std::default_random_engine &engine);
 
 #endif // SIM_H

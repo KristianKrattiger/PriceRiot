@@ -1,4 +1,8 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj"
+  "CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj.d"
+  "CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj"
+  "CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj.d"
   "CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj"
   "CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj.d"
   "PriceRiot_app.exe"

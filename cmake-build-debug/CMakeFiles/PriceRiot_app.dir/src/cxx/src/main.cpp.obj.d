@@ -1,5 +1,5 @@
-CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: \
- C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\sim.cpp \
+CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj: \
+ C:\Users\krist\OneDrive\Desktop\PriceRiot\src\cxx\src\main.cpp \
  C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/include/sim.h \
  C:/MinGW/mingw64/include/c++/14.2.0/vector \
  C:/MinGW/mingw64/include/c++/14.2.0/bits/requires_hosted.h \
@@ -213,11 +213,4 @@ CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj: \
  C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/include/products.h \
  C:/MinGW/mingw64/include/c++/14.2.0/iostream \
  C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/include/products.h \
- C:/MinGW/mingw64/include/c++/14.2.0/chrono \
- C:/MinGW/mingw64/include/c++/14.2.0/fstream \
- C:/MinGW/mingw64/include/c++/14.2.0/x86_64-w64-mingw32/bits/basic_file.h \
- C:/MinGW/mingw64/include/c++/14.2.0/x86_64-w64-mingw32/bits/c++io.h \
- C:/MinGW/mingw64/include/c++/14.2.0/bits/fstream.tcc \
- C:/MinGW/mingw64/include/c++/14.2.0/thread \
- C:/MinGW/mingw64/include/c++/14.2.0/bits/std_thread.h \
- C:/MinGW/mingw64/include/c++/14.2.0/bits/this_thread_sleep.h
+ C:/MinGW/mingw64/include/c++/14.2.0/chrono

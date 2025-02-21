@@ -68,14 +68,14 @@
 				{
 					"directoryIndex" : 0,
 					"id" : "PriceRiot_app::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-PriceRiot_app-Debug-4f4cfa590c9625a9c8b6.json",
+					"jsonFile" : "target-PriceRiot_app-Debug-885912c0fab158c34c07.json",
 					"name" : "PriceRiot_app",
 					"projectIndex" : 0
 				},
 				{
 					"directoryIndex" : 0,
 					"id" : "mycppmodule::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-mycppmodule-Debug-506476d6480fd79ae6db.json",
+					"jsonFile" : "target-mycppmodule-Debug-749d02f4cd8dda1cb826.json",
 					"name" : "mycppmodule",
 					"projectIndex" : 0
 				}

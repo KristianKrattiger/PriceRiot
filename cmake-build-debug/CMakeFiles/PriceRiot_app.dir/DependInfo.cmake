@@ -8,6 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/src/main.cpp" "CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj" "gcc" "CMakeFiles/PriceRiot_app.dir/src/cxx/src/main.cpp.obj.d"
+  "C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/src/products.cpp" "CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj" "gcc" "CMakeFiles/PriceRiot_app.dir/src/cxx/src/products.cpp.obj.d"
   "C:/Users/krist/OneDrive/Desktop/PriceRiot/src/cxx/src/sim.cpp" "CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj" "gcc" "CMakeFiles/PriceRiot_app.dir/src/cxx/src/sim.cpp.obj.d"
   )
 
