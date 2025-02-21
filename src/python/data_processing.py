@@ -1,9 +1,6 @@
 import os
+
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from pydantic_core.core_schema import none_schema
-from sklearn.preprocessing import StandardScaler
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DATA_DIR = os.path.join(BASE_DIR, 'data', 'raw')
@@ -86,12 +83,28 @@ def customer_info (df):
         'Num_of_Returns': 'sum',
         'Satisfaction_Score': 'mean',
         'Last_Purchase_Days_Ago': 'min',
-        'Target_Churn': 'mean'
+        'Target_Churn': 'mean',
+        'Email_Opt_In': 'mean',
+        'Promotion_Response': 'first'
     }).reset_index()
 
     print(customer_stats)
     customer_stats.to_csv(os.path.join(PROCESSED_DATA_DIR, 'customer_stats.csv'))
     return customer_stats
+
+def transaction_info (df):
+    transaction_stats = df.groupby('id').agg({
+        'Transaction ID': 'first',
+        'id': 'first',
+        'Product Category': 'first',
+        'Quantity': 'sum',
+        'Price per Unit': 'sum',
+        'Total Amount': 'sum'
+    })
+
+    print(transaction_stats)
+    transaction_stats.to_csv(os.path.join(PROCESSED_DATA_DIR, 'transaction_info.csv'))
+    return transaction_stats
 
 def process_data (retail_path, churn_path, output_dir):
     # Load data
@@ -111,6 +124,7 @@ def process_data (retail_path, churn_path, output_dir):
     # Features
     customers = customer_info(merged_df)
     churn_per_category = churn(merged_df)
+    transactions = transaction_info(merged_df)
 
     # Save processed data to CSV files
     retail_output_path = os.path.join(output_dir, 'retail_sales_processed.csv')
@@ -118,12 +132,14 @@ def process_data (retail_path, churn_path, output_dir):
     merged_output_path = os.path.join(output_dir, 'merged_sales.csv')
     customer_info_output_path = os.path.join(output_dir, 'customer_info.csv')
     churn_info_output_path = os.path.join(output_dir, 'churn_info.csv')
+    transaction_info_output_path = os.path.join(output_dir, 'transaction_info.csv')
 
     merged_df.to_csv(merged_output_path, index=False)
     retail_df.to_csv(retail_output_path, index=False)
     churn_df.to_csv(churn_output_path, index=False)
     customers.to_csv(customer_info_output_path, index=False)
     churn_per_category.to_csv(customer_info_output_path, index=False)
+    transactions.to_csv(transaction_info_output_path, index=False)
 
     print ("Processed data saved to:")
     print (" -", retail_output_path)
@@ -131,6 +147,7 @@ def process_data (retail_path, churn_path, output_dir):
     print (" -", merged_output_path)
     print (" -", customer_info_output_path)
     print (" -", churn_info_output_path)
+    print (" -", transaction_info_output_path)
 
     return merged_df
 
