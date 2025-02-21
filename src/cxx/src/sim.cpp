@@ -10,19 +10,19 @@
 using namespace std;
 
 struct Customer {
-    int id;
-    double annualIncome, totalSpent, averageSpend;
-    int yearsAsCust, numPurchases, numReturns,
-        numSprtCntcts, satisfaction, lastPurchaseInDays, age;
+    int id{};
+    double annualIncome{}, totalSpent{}, averageSpend{};
+    int yearsAsCust{}, numPurchases{}, numReturns{},
+        numSprtContacts{}, satisfaction{}, lastPurchaseInDays{}, age{};
     string gender, promotionResponse;
-    bool optIn, churn;
+    bool optIn{}, churn{};
 
 };
 
 struct Transaction {
-  int custID, transID;
-  double amount, pricePerUnit;
-  int quantity;
+  int custID{}, transID{};
+  double amount{}, pricePerUnit{}, totalSpent{};
+  int quantity{};
   string productCategory, timestamp;
 };
 
@@ -109,7 +109,26 @@ vector<Transaction> loadTransactionsFromCSV(const string &filename) {
     if (getline(ss, token, ',')) {
       transaction.custID = stoi(token);
     }
+    if (getline(ss, token, ',')) {
+      transaction.productCategory = token;
+    }
+    if (getline(ss, token, ',')) {
+      transaction.quantity = stoi(token);
+    }
+    if (getline(ss, token, ',')) {
+      transaction.pricePerUnit = stod(token);
+    }
+    if (getline(ss, token, ',')) {
+      transaction.totalSpent = stod(token);
+    }
+    if (getline(ss, token, ',')) {
+      transaction.timestamp = token;
+    }
+
+    transactions.push_back(transaction);
   }
+  transactionsFile.close();
+  return transactions;
 }
 double simulateTransactionAmount(double baseAmount, double volatility,
                                  default_random_engine &engine) {
@@ -120,14 +139,25 @@ double simulateTransactionAmount(double baseAmount, double volatility,
 int main () {
   vector<Customer> customers =
     loadCustomersFromCSV(R"(..\src\python\data\raw\customer_stats.csv)");
+  vector<Transaction> transactions =
+    loadTransactionsFromCSV(R"(..\src\python\data\processed\transaction_info.csv)");
 
   for (auto & customer : customers) {
       cout << "Customer ID: " << customer.id <<
-      ", Annual Income: " << customer.annualIncome <<
-      ", Total Spent: " << customer.totalSpent <<
-      ", Average Spend: " << customer.averageSpend <<
-      ", Last Purchase: " << customer.lastPurchaseInDays <<
-      ", Age: " << customer.age << endl;
+        ", Annual Income: " << customer.annualIncome <<
+          ", Total Spent: " << customer.totalSpent <<
+            ", Average Spend: " << customer.averageSpend <<
+              ", Last Purchase: " << customer.lastPurchaseInDays <<
+                  ", Age: " << customer.age << endl;
     }
 
+  for (auto & transaction : transactions) {
+    cout << "Transaction ID: " << transaction.transID
+    << ", CustID: " << transaction.custID <<
+      "Product Category: " << transaction.productCategory <<
+        "Quantity: " << transaction.quantity <<
+          "Price per unit: " << transaction.pricePerUnit <<
+            "Total transaction amount: " << transaction.totalSpent <<
+              "Purchase date: " << transaction.timestamp << endl;
+  }
 }

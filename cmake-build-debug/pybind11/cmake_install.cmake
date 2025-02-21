@@ -1,8 +1,8 @@
-# Install script for directory: C:/Users/krist/OneDrive/Desktop/PriceRiot_cpp/pybind11
+# Install script for directory: C:/Users/krist/OneDrive/Desktop/PriceRiot/pybind11
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "C:/Program Files (x86)/PriceRiot_cpp")
+  set(CMAKE_INSTALL_PREFIX "C:/Program Files (x86)/PriceRiot")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
