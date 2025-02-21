@@ -19,7 +19,7 @@ struct Customer {
     int id{};
     double annualIncome{}, totalSpent{}, averageSpend{};
     int yearsAsCust{}, numPurchases{}, numReturns{},
-        numSprtContacts{}, satisfaction{}, lastPurchaseInDays{}, age{};
+        numSprtContacts{}, lastPurchaseInDays{}, age{};
     string gender, promotionResponse;
     bool optIn{}, churn{};
 };
@@ -27,7 +27,7 @@ struct Customer {
 struct Transaction {
     int custID{}, transID{};
     double amount{}, pricePerUnit{}, totalSpent{};
-    int quantity{};
+    int quantity{}, satisfaction{};
     string productCategory, timestamp;
 };
 

@@ -1,4 +1,5 @@
 #include "sim.h"
+#include "products.h"
 
 vector<Customer> loadCustomersFromCSV(const string &filename) {
     vector<Customer> customers;
@@ -25,7 +26,6 @@ vector<Customer> loadCustomersFromCSV(const string &filename) {
         if (getline(ss, token, ',')) { customer.numPurchases = stoi(token); }
         if (getline(ss, token, ',')) { customer.averageSpend = stod(token); }
         if (getline(ss, token, ',')) { customer.numReturns = stoi(token); }
-        if (getline(ss, token, ',')) { customer.satisfaction = stoi(token); }
         if (getline(ss, token, ',')) { customer.lastPurchaseInDays = stoi(token); }
         if (getline(ss, token, ',')) { customer.churn = stoi(token); }
         if (getline(ss, token, ',')) { customer.promotionResponse = token; }
@@ -56,6 +56,7 @@ vector<Transaction> loadTransactionsFromCSV(const string &filename) {
         if (getline(ss, token, ',')) { transaction.pricePerUnit = stod(token); }
         if (getline(ss, token, ',')) { transaction.totalSpent = stod(token); }
         if (getline(ss, token, ',')) { transaction.timestamp = token; }
+        if (getline(ss, token, ',')) { transaction.satisfaction = stoi(token); }
         transactions.push_back(transaction);
     }
     transactionsFile.close();
