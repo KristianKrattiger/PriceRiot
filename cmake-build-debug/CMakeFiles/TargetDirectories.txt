@@ -1,0 +1,6 @@
+C:/Users/krist/OneDrive/Desktop/PriceRiot_cpp/cmake-build-debug/CMakeFiles/mycppmodule.dir
+C:/Users/krist/OneDrive/Desktop/PriceRiot_cpp/cmake-build-debug/CMakeFiles/PriceRiot_cpp.dir
+C:/Users/krist/OneDrive/Desktop/PriceRiot_cpp/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/krist/OneDrive/Desktop/PriceRiot_cpp/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+C:/Users/krist/OneDrive/Desktop/PriceRiot_cpp/cmake-build-debug/pybind11/CMakeFiles/edit_cache.dir
+C:/Users/krist/OneDrive/Desktop/PriceRiot_cpp/cmake-build-debug/pybind11/CMakeFiles/rebuild_cache.dir
