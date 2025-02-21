@@ -1,4 +1,4 @@
-id,Annual_Income,Total_Spend,Years_as_Customer,Num_of_Purchases,Average_Transaction_Amount,Num_of_Returns,Num_of_Support_Contacts,Satisfaction_Score,Last_Purchase_Days_Ago,Email_Opt_In,Promotion_Response,Target_Churn
+id,Annual_Income,Total_Spend,Years_as_Customer,Num_of_Purchases,Average_Transaction_Amount,Num_of_Returns,Num_of_Support_Contacts,Satisfaction,Last_Purchase_Days_Ago,Email_Opt_In,Promotion_Response,Target_Churn
 1,45.15,5892.58,5,22,453.8,2,0,3,129,1,Responded,1
 2,79.51,9025.47,13,77,22.9,2,2,3,227,0,Responded,0
 3,29.19,618.83,13,71,50.53,5,2,2,283,0,Responded,1

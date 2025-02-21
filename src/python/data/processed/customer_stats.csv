@@ -1,4 +1,4 @@
-,id,Gender,Age,Annual_Income,Total_Spend,Years_as_Customer,Num_of_Purchases,Average_Transaction_Amount,Num_of_Returns,Satisfaction_Score,Last_Purchase_Days_Ago,Target_Churn,Email_Opt_In,Promotion_Response
+,id,Gender,Age,Annual_Income,Total_Spend,Years_as_Customer,Num_of_Purchases,Average_Transaction_Amount,Num_of_Returns,Satisfaction,Last_Purchase_Days_Ago,Target_Churn,Email_Opt_In,Promotion_Response
 0,1,Male,34.0,45.15,5892.58,5,22,453.8,2,3.0,129,1.0,1.0,Responded
 1,10,Female,52.0,169.59,9803.57,17,34,481.18,6,2.0,171,0.0,1.0,Unsubscribed
 2,100,Male,41.0,117.21,3681.83,14,87,309.19,2,2.0,147,0.0,0.0,Ignored

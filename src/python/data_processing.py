@@ -81,7 +81,7 @@ def customer_info (df):
         'Num_of_Purchases': 'sum',
         'Average_Transaction_Amount': 'mean',
         'Num_of_Returns': 'sum',
-        'Satisfaction_Score': 'mean',
+        'Satisfaction': 'mean',
         'Last_Purchase_Days_Ago': 'min',
         'Target_Churn': 'mean',
         'Email_Opt_In': 'mean',
@@ -99,7 +99,8 @@ def transaction_info (df):
         'Product Category': 'first',
         'Quantity': 'sum',
         'Price per Unit': 'sum',
-        'Total Amount': 'sum'
+        'Total Amount': 'sum',
+        'Satisfaction': 'mean',
     })
 
     print(transaction_stats)
