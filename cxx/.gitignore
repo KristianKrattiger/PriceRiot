@@ -1,0 +1,13 @@
+# CMake / CLion build directories
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+_deps/
+
+# IDE files
+.idea/
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db

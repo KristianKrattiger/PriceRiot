@@ -1,0 +1,52 @@
+# Build artifacts
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+_deps/
+*.pyd
+*.dll
+*.exe
+*.obj
+*.lib
+*.exp
+*.d
+*.a
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data files (optional - uncomment if you don't want to track data)
+# data/processed/
+# data/raw/*.csv
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
