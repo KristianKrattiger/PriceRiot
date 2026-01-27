@@ -1,0 +1,240 @@
+# PriceRiot Store Layout Configuration
+# Clean layout with proper node spacing to avoid navmesh connection issues
+
+nodes:
+  # Entrance
+  - id: 1
+    type: Entrance
+    x: 0.0
+    z: 0.0
+    length: 4.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 1.0
+    exit_rate: 0.0
+
+  # Main aisle junctions
+  - id: 2
+    type: Junction
+    x: 10.0
+    z: 0.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 3
+    type: Junction
+    x: 20.0
+    z: 0.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  # Side aisle junctions (left)
+  - id: 4
+    type: Junction
+    x: 10.0
+    z: -8.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 5
+    type: Junction
+    x: 20.0
+    z: -8.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  # Side aisle junctions (right)
+  - id: 6
+    type: Junction
+    x: 10.0
+    z: 8.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  # Register/Checkout
+  - id: 7
+    type: Register
+    x: 30.0
+    z: 0.0
+    length: 6.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 5.0
+    service_rate: 0.5
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  # Exit
+  - id: 8
+    type: Exit
+    x: 35.0
+    z: 0.0
+    length: 4.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 1.0
+
+edges:
+  # Main horizontal aisle (Entrance to Register)
+  - id: 1
+    from: 1
+    to: 2
+    length: 10.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+  - id: 2
+    from: 2
+    to: 3
+    length: 10.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.5
+    shelf_right: 0.5
+
+  - id: 3
+    from: 3
+    to: 7
+    length: 10.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.5
+    shelf_right: 0.5
+
+  - id: 4
+    from: 7
+    to: 8
+    length: 5.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+  # Left side aisles (vertical)
+  - id: 5
+    from: 2
+    to: 4
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.4
+    shelf_right: 0.4
+
+  - id: 6
+    from: 3
+    to: 5
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.4
+    shelf_right: 0.4
+
+  # Right side aisle (vertical)
+  - id: 7
+    from: 2
+    to: 6
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.4
+    shelf_right: 0.4

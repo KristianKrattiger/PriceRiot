@@ -22,6 +22,7 @@
 #include "../environment/products.h"
 #include "../environment/shelf.h"
 #include "transaction.h"
+#include "navmesh_visualizer.h"
 
 using namespace priceriot;
 
@@ -93,6 +94,10 @@ int main() {
 
         layout.buildGeometry(store);
         std::cout << "Layout geometry baked.\n";
+        
+        // Build navmesh
+        store.buildNavMesh(layout);
+        std::cout << "Navmesh built: " << store.getNavMesh().getPolygonCount() << " polygons.\n";
 
     } catch (const std::exception& ex) {
         std::cerr << "Critical Error: " << ex.what() << "\n";
@@ -105,6 +110,12 @@ int main() {
     std::default_random_engine rng(std::random_device{}());
 
     LayoutVisualizer visualizer;
+    NavMeshVisualizer navmeshVisualizer;
+    
+    // Initialize navmesh visualizer with rendering constants
+    navmeshVisualizer.pixelsPerMeter = PIXELS_PER_METER;
+    navmeshVisualizer.offsetX = OFFSET_X;
+    navmeshVisualizer.offsetY = OFFSET_Y;
 
     sf::Clock deltaClock;
     float spawnTimer = 0.0f;
@@ -144,6 +155,16 @@ int main() {
                     ag->cust->currentEdgeIndex = startEdgeIdx;
                     ag->cust->distOnEdge = 0.0;
                     ag->cust->speed = 0.75;
+                    
+                    // Initialize world position from entrance node
+                    for (int i = 0; i < store.numNodes(); ++i) {
+                        if (store.nodeAt(i).getNodeType() == Node::NodeType::Entrance) {
+                            const auto& entranceNode = store.nodeAt(i);
+                            ag->cust->setPosition(entranceNode.getX(), entranceNode.getZ());
+                            break;
+                        }
+                    }
+                    
                     agents.push_back(std::move(ag));
                 }
             }
@@ -158,6 +179,17 @@ int main() {
 
         ImGui::Begin("Simulation Control");
         ImGui::Text("Nodes: %d  Edges: %d", store.numNodes(), store.numEdges());
+        if (store.hasNavMesh()) {
+            ImGui::Text("Navmesh: %d polygons", store.getNavMesh().getPolygonCount());
+            
+            ImGui::Separator();
+            ImGui::Text("Navmesh Visualization:");
+            ImGui::Checkbox("Show Polygons", &navmeshVisualizer.showPolygons);
+            ImGui::Checkbox("Show Connections", &navmeshVisualizer.showConnections);
+            ImGui::Checkbox("Show Agent Paths", &navmeshVisualizer.showPaths);
+            ImGui::Checkbox("Show Polygon Centers", &navmeshVisualizer.showCenters);
+        }
+        ImGui::Separator();
         ImGui::Text("Active Agents: %zu", agents.size());
         ImGui::Checkbox("Pause Sim", &isPaused);
         ImGui::SliderFloat("Spawn Rate", &spawnInterval, 0.1f, 5.0f);
@@ -166,7 +198,31 @@ int main() {
 
         window.clear(sf::Color(30, 30, 40));
 
+        // Draw store layout (base layer)
         visualizer.draw(window, layout);
+        
+        // Draw navmesh visualization (overlay layer)
+        if (store.hasNavMesh()) {
+            const NavMesh& navmesh = store.getNavMesh();
+            
+            // Draw polygons
+            navmeshVisualizer.drawPolygons(window, navmesh);
+            
+            // Draw connections
+            navmeshVisualizer.drawConnections(window, navmesh);
+            
+            // Draw polygon centers
+            navmeshVisualizer.drawCenters(window, navmesh);
+            
+            // Draw agent paths
+            if (navmeshVisualizer.showPaths) {
+                for (const auto& agent : agents) {
+                    if (agent->cust->isUsingNavmesh() && !agent->cust->getNavmeshPath().empty()) {
+                        navmeshVisualizer.drawPath(window, agent->cust->getNavmeshPath());
+                    }
+                }
+            }
+        }
 
         sf::CircleShape agentShape(6.0f);
         agentShape.setOrigin(3.0f, 3.0f);
@@ -179,21 +235,30 @@ int main() {
                 else if (agent->basket.getSize() > 0) agentShape.setFillColor(sf::Color::Magenta);
                 else agentShape.setFillColor(sf::Color::Cyan);
 
-                int eIdx = agent->cust->currentEdgeIndex;
-                if (layout.edgeGeoms.count(eIdx)) {
-                    const auto& geo = layout.edgeGeoms.at(eIdx);
-
-                    float edgeLen = std::sqrt(std::pow(geo.endX - geo.startX, 2) + std::pow(geo.endZ - geo.startZ, 2));
-                    float t = static_cast<float>(agent->cust->distOnEdge) / edgeLen;
-                    t = std::max(0.0f, std::min(1.0f, t));
-
-                    float currX = geo.startX + (geo.endX - geo.startX) * t;
-                    float currZ = geo.startZ + (geo.endZ - geo.startZ) * t;
-
-                    agentShape.setPosition(currX * PIXELS_PER_METER + OFFSET_X,
-                                           currZ * PIXELS_PER_METER + OFFSET_Y);
-                    window.draw(agentShape);
+                // Use world position if available (navmesh), otherwise fall back to edge-based calculation
+                float currX, currZ;
+                if (agent->cust->getPosX() != 0.0 || agent->cust->getPosZ() != 0.0) {
+                    // Use world position from navmesh
+                    currX = static_cast<float>(agent->cust->getPosX());
+                    currZ = static_cast<float>(agent->cust->getPosZ());
+                } else {
+                    // Fall back to edge-based calculation for backward compatibility
+                    int eIdx = agent->cust->currentEdgeIndex;
+                    if (layout.edgeGeoms.count(eIdx)) {
+                        const auto& geo = layout.edgeGeoms.at(eIdx);
+                        float edgeLen = std::sqrt(std::pow(geo.endX - geo.startX, 2) + std::pow(geo.endZ - geo.startZ, 2));
+                        float t = static_cast<float>(agent->cust->distOnEdge) / edgeLen;
+                        t = std::max(0.0f, std::min(1.0f, t));
+                        currX = geo.startX + (geo.endX - geo.startX) * t;
+                        currZ = geo.startZ + (geo.endZ - geo.startZ) * t;
+                    } else {
+                        continue; // Skip if no valid position
+                    }
                 }
+
+                agentShape.setPosition(currX * PIXELS_PER_METER + OFFSET_X,
+                                       currZ * PIXELS_PER_METER + OFFSET_Y);
+                window.draw(agentShape);
             }
         }
 

@@ -67,6 +67,10 @@ set(COMMON_SOURCES
         tools/io_csv.cpp
         environment/store_inventory.cpp
         environment/storeLayout.cpp
+        environment/navmesh.cpp
+        environment/navmesh_generator.cpp
+        environment/navmesh_pathfinder.cpp
+        engine/navmesh_visualizer.cpp
 )
 
 add_executable(simulator

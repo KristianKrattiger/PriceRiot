@@ -2,6 +2,8 @@
 #include "customer.h"
 // CRITICAL FIX: Include Environment so StoreGraph and Node are defined
 #include "../environment/environment.h"
+#include "../environment/navmesh_pathfinder.h"
+#include "../environment/storeLayout.h"
 #include "basket.h"
 #include "shelf.h"
 #include <random>
@@ -9,6 +11,7 @@
 #include <queue>
 #include <map>
 #include <iostream>
+#include <cmath>
 
 namespace priceriot {
 
@@ -125,6 +128,53 @@ Decision DefaultBehavior::decide(Customer& c, const ICustomerBehaviorContext& ct
     if (c.getDwellTicks() > 0) return {Decision::Wait};
     if (c.currentEdgeIndex == -1) return {Decision::Despawn};
 
+    // Check if navmesh is available and use hybrid navigation
+    bool useNavmesh = ctx.store.hasNavMesh();
+    
+    // If using navmesh and have a path, follow it
+    if (useNavmesh && c.isUsingNavmesh() && 
+        !c.getNavmeshPath().empty() &&
+        c.getCurrentWaypointIndex() < c.getNavmeshPath().size()) {
+        
+        // Get current waypoint
+        const auto& waypoint = c.getNavmeshPath()[c.getCurrentWaypointIndex()];
+        double dx = waypoint.first - c.posX;
+        double dz = waypoint.second - c.posZ;
+        double dist = std::sqrt(dx * dx + dz * dz);
+        
+        // If reached waypoint, move to next
+        if (dist < 0.5) { // 0.5m threshold
+            c.incrementWaypointIndex();
+            if (c.getCurrentWaypointIndex() >= c.getNavmeshPath().size()) {
+                // Reached end of path, clear it
+                c.setNavmeshPath({});
+                c.setUsingNavmesh(false);
+            } else {
+                // Continue to next waypoint
+                return {Decision::Move};
+            }
+        } else {
+            // Move toward waypoint
+            double moveDist = c.speed * ctx.dt;
+            if (moveDist > dist) moveDist = dist;
+            
+            double moveX = (dx / dist) * moveDist;
+            double moveZ = (dz / dist) * moveDist;
+            
+            c.posX += moveX;
+            c.posZ += moveZ;
+            
+            // Update distOnEdge for backward compatibility (approximate)
+            if (c.currentEdgeIndex >= 0) {
+                const auto& edge = ctx.store.edgeAt(c.currentEdgeIndex);
+                // Approximate distance along edge based on position
+                c.distOnEdge = std::min(c.distOnEdge + moveDist, edge.getLength());
+            }
+            
+            return {Decision::Move};
+        }
+    }
+
     const auto& currentEdge = ctx.store.edgeAt(c.currentEdgeIndex);
     const int currentNode = currentEdge.getToNode();
 
@@ -186,14 +236,29 @@ Decision DefaultBehavior::decide(Customer& c, const ICustomerBehaviorContext& ct
             return {Decision::Despawn};
         }
 
-        // 4. Navigation (Find next edge)
+        // 4. Navigation (Find next edge or waypoint)
         int nextEdge = -1;
+        int targetNodeId = -1;
 
         if (state == HeadingToCheckout) {
+            // Find waypoint node (Register)
+            for (int i = 0; i < ctx.store.numNodes(); ++i) {
+                if (ctx.store.nodeAt(i).getNodeType() == Node::NodeType::Register) {
+                    targetNodeId = ctx.store.nodeAt(i).getNodeId();
+                    break;
+                }
+            }
             nextEdge = Navigator::findNextEdgeToType(currentNode, Node::NodeType::Register, ctx.store);
         }
         else if (state == HeadingToExit) {
-             nextEdge = Navigator::findNextEdgeToType(currentNode, Node::NodeType::Exit, ctx.store);
+            // Find waypoint node (Exit)
+            for (int i = 0; i < ctx.store.numNodes(); ++i) {
+                if (ctx.store.nodeAt(i).getNodeType() == Node::NodeType::Exit) {
+                    targetNodeId = ctx.store.nodeAt(i).getNodeId();
+                    break;
+                }
+            }
+            nextEdge = Navigator::findNextEdgeToType(currentNode, Node::NodeType::Exit, ctx.store);
         }
         else if (state == Browsing) {
             // Wander: Pick random edge that isn't reverse
@@ -204,6 +269,10 @@ Decision DefaultBehavior::decide(Customer& c, const ICustomerBehaviorContext& ct
             if (!candidates.empty()) {
                 static std::mt19937 rng(std::random_device{}());
                 nextEdge = candidates[rng() % candidates.size()];
+                // Get target node for navmesh
+                if (nextEdge >= 0) {
+                    targetNodeId = ctx.store.nodeAt(ctx.store.edgeAt(nextEdge).getToNode()).getNodeId();
+                }
             }
         }
 
@@ -212,12 +281,53 @@ Decision DefaultBehavior::decide(Customer& c, const ICustomerBehaviorContext& ct
             for(int i=0; i<ctx.store.numEdges(); ++i) {
                 if (ctx.store.edgeAt(i).getFromNode() == currentNode) {
                      nextEdge = i;
+                     targetNodeId = ctx.store.nodeAt(ctx.store.edgeAt(i).getToNode()).getNodeId();
                      break;
                 }
             }
             if (nextEdge == -1) return {Decision::Despawn};
         }
 
+        // If navmesh is available, use hybrid navigation
+        bool useNavmesh = ctx.store.hasNavMesh();
+        if (useNavmesh && targetNodeId >= 0) {
+            // Get current position (use node center if world pos not set)
+            double startX = c.posX;
+            double startZ = c.posZ;
+            if (startX == 0.0 && startZ == 0.0) {
+                // Initialize from current node center
+                const auto& currentNodeObj = ctx.store.nodeAt(currentNode);
+                startX = currentNodeObj.getX();
+                startZ = currentNodeObj.getZ();
+                c.setPosition(startX, startZ);
+            }
+            
+            // Get target position (node center)
+            const auto& targetNode = ctx.store.nodeAt(ctx.store.nodeIndexById(targetNodeId));
+            double endX = targetNode.getX();
+            double endZ = targetNode.getZ();
+            
+            // Find navmesh path
+            auto path = NavMeshPathfinder::findPath(ctx.store.getNavMesh(), startX, startZ, endX, endZ);
+            
+            if (!path.empty()) {
+                // Convert path to waypoints
+                std::vector<std::pair<double, double>> waypoints;
+                for (const auto& point : path) {
+                    waypoints.emplace_back(point.x, point.z);
+                }
+                c.setNavmeshPath(waypoints);
+                c.setUsingNavmesh(true);
+                
+                // Update current edge index for compatibility
+                c.currentEdgeIndex = nextEdge;
+                c.distOnEdge = 0.0;
+                
+                return {Decision::Move};
+            }
+        }
+        
+        // Fall back to edge-based navigation
         return {Decision::SwitchEdge, nextEdge};
     }
 

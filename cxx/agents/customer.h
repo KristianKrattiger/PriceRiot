@@ -27,6 +27,17 @@ public:
     int currentEdgeIndex = -1;
     double distOnEdge = 0.0;
     double speed = 1.0;
+    
+    // World position (for navmesh navigation)
+    double posX = 0.0;
+    double posZ = 0.0;
+    
+    // Getters for world position
+    [[nodiscard]] double getPosX() const noexcept { return posX; }
+    [[nodiscard]] double getPosZ() const noexcept { return posZ; }
+    
+    // Setters for world position
+    void setPosition(double x, double z) noexcept { posX = x; posZ = z; }
 
     // --- Strategy Wiring ---
     void setBehavior(ICustomerBehavior* b) noexcept;
@@ -82,6 +93,15 @@ public:
 
     // State Setters
     void setSpawning(bool b) { behaviorState.isSpawning = b; }
+    
+    // Navmesh path state access
+    bool isUsingNavmesh() const noexcept { return behaviorState.usingNavmesh; }
+    void setUsingNavmesh(bool use) noexcept { behaviorState.usingNavmesh = use; }
+    const std::vector<std::pair<double, double>>& getNavmeshPath() const noexcept { return behaviorState.navmeshPath; }
+    void setNavmeshPath(const std::vector<std::pair<double, double>>& path) { behaviorState.navmeshPath = path; behaviorState.currentWaypointIndex = 0; }
+    size_t getCurrentWaypointIndex() const noexcept { return behaviorState.currentWaypointIndex; }
+    void setCurrentWaypointIndex(size_t idx) noexcept { behaviorState.currentWaypointIndex = idx; }
+    void incrementWaypointIndex() noexcept { behaviorState.currentWaypointIndex++; }
 
 private:
     struct BehaviorProfile {
@@ -99,6 +119,11 @@ private:
         int dwellTicks = 0;
         int lastShopCell = -1;
         int targetNodeId = -1;
+        
+        // Navmesh path state
+        std::vector<std::pair<double, double>> navmeshPath; // Waypoints (x, z)
+        size_t currentWaypointIndex = 0;
+        bool usingNavmesh = false;
     };
 
     BehaviorProfile behaviorProfile;

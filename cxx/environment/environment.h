@@ -12,8 +12,12 @@
 
 #include "cell.h"
 #include "products.h"
+#include "navmesh.h"
 
 namespace priceriot {
+
+// Forward declaration to avoid circular dependency
+class StoreLayout;
 
 // ------------------ Node ------------------
 class Node {
@@ -203,6 +207,11 @@ public:
     bool validateTopology(bool verbose = true) const;
     void printAllEdgeCellsWithShelves(const YAML::Node& storeRoot, priceriot::Products& catalog) const;
 
+    // Navmesh support
+    void buildNavMesh(const StoreLayout& layout);
+    const NavMesh& getNavMesh() const noexcept { return navmesh; }
+    bool hasNavMesh() const noexcept { return navmeshBuilt; }
+
     priceriot::Products catalog;
 
 private:
@@ -212,6 +221,9 @@ private:
     std::unordered_map<int,int> nodeIdToIndex;
     std::unordered_map<int,int> edgeIdToIndex;
     void buildAdjacency();
+    
+    NavMesh navmesh;
+    bool navmeshBuilt = false;
 };
 
 } // namespace priceriot
