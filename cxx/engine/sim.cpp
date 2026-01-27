@@ -21,6 +21,7 @@
 #include "../environment/storeLayout.h"
 #include "../environment/products.h"
 #include "../environment/shelf.h"
+#include "../environment/collision_manager.h"
 #include "transaction.h"
 #include "navmesh_visualizer.h"
 
@@ -50,14 +51,18 @@ struct Agent {
 };
 
 struct LayoutVisualizer {
+    float pixelsPerMeter = PIXELS_PER_METER;
+    float offsetX = OFFSET_X;
+    float offsetY = OFFSET_Y;
+    
     void draw(sf::RenderWindow& window, const StoreLayout& layout) {
         for(const auto& [id, geo] : layout.edgeGeoms) {
             auto corners = geo.getCorners();
             sf::ConvexShape shape;
             shape.setPointCount(4);
             for(int i=0; i<4; ++i) {
-                shape.setPoint(i, sf::Vector2f(corners[i].x * PIXELS_PER_METER + OFFSET_X,
-                                               corners[i].y * PIXELS_PER_METER + OFFSET_Y));
+                shape.setPoint(i, sf::Vector2f(corners[i].x * pixelsPerMeter + offsetX,
+                                               corners[i].y * pixelsPerMeter + offsetY));
             }
             shape.setFillColor(sf::Color(60, 60, 70));
             shape.setOutlineColor(sf::Color(100, 100, 100));
@@ -67,9 +72,9 @@ struct LayoutVisualizer {
 
         for(const auto& [id, geo] : layout.nodeGeoms) {
             sf::RectangleShape shape;
-            shape.setSize(sf::Vector2f(geo.width * PIXELS_PER_METER, geo.length * PIXELS_PER_METER));
+            shape.setSize(sf::Vector2f(geo.width * pixelsPerMeter, geo.length * pixelsPerMeter));
             shape.setOrigin(shape.getSize() / 2.0f);
-            shape.setPosition(geo.x * PIXELS_PER_METER + OFFSET_X, geo.z * PIXELS_PER_METER + OFFSET_Y);
+            shape.setPosition(geo.x * pixelsPerMeter + offsetX, geo.z * pixelsPerMeter + offsetY);
 
             shape.setFillColor(sf::Color(80, 80, 100));
             shape.setOutlineColor(sf::Color::White);
@@ -98,6 +103,10 @@ int main() {
         // Build navmesh
         store.buildNavMesh(layout);
         std::cout << "Navmesh built: " << store.getNavMesh().getPolygonCount() << " polygons.\n";
+        
+        // Build physics world
+        store.buildPhysicsWorld(layout);
+        std::cout << "Physics world built.\n";
 
     } catch (const std::exception& ex) {
         std::cerr << "Critical Error: " << ex.what() << "\n";
@@ -109,13 +118,31 @@ int main() {
     std::vector<std::shared_ptr<Customer>> raw_customers_ref;
     std::default_random_engine rng(std::random_device{}());
 
+    // Calculate store center for proper centering
+    float storeCenterX, storeCenterZ;
+    layout.getCenter(storeCenterX, storeCenterZ);
+    
+    // Calculate dynamic offsets to center the store
+    float dynamicOffsetX = OFFSET_X - storeCenterX * PIXELS_PER_METER;
+    float dynamicOffsetY = OFFSET_Y - storeCenterZ * PIXELS_PER_METER;
+
     LayoutVisualizer visualizer;
     NavMeshVisualizer navmeshVisualizer;
+    CollisionManager collisionManager;
     
-    // Initialize navmesh visualizer with rendering constants
+    // Initialize visualizers with dynamic centering
+    visualizer.pixelsPerMeter = PIXELS_PER_METER;
+    visualizer.offsetX = dynamicOffsetX;
+    visualizer.offsetY = dynamicOffsetY;
+    
     navmeshVisualizer.pixelsPerMeter = PIXELS_PER_METER;
-    navmeshVisualizer.offsetX = OFFSET_X;
-    navmeshVisualizer.offsetY = OFFSET_Y;
+    navmeshVisualizer.offsetX = dynamicOffsetX;
+    navmeshVisualizer.offsetY = dynamicOffsetY;
+    
+    // Initialize collision manager
+    if (store.hasPhysicsWorld()) {
+        collisionManager.setPhysicsWorld(&store.getPhysicsWorld());
+    }
 
     sf::Clock deltaClock;
     float spawnTimer = 0.0f;
@@ -165,14 +192,60 @@ int main() {
                         }
                     }
                     
+                    // Register agent for collision detection
+                    collisionManager.registerAgent(ag->cust.get(), 0.35);
+                    
                     agents.push_back(std::move(ag));
                 }
             }
 
+            // Ensure all agents are registered
+            for (auto& agent : agents) {
+                collisionManager.registerAgent(agent->cust.get(), 0.35);
+            }
+            
+            // Update agents with collision avoidance
+            for (auto& agent : agents) {
+                // Apply avoidance steering before movement
+                if (store.hasPhysicsWorld() && agent->cust) {
+                    double avoidX = 0.0, avoidZ = 0.0;
+                    collisionManager.getAvoidanceVector(
+                        agent->cust->getPosX(), agent->cust->getPosZ(), 
+                        0.35, avoidX, avoidZ, 2.0
+                    );
+                    
+                    // Apply small avoidance offset to position
+                    if (std::abs(avoidX) > 0.01 || std::abs(avoidZ) > 0.01) {
+                        double avoidanceStrength = 0.3 * dt; // Scale by time
+                        double newX = agent->cust->getPosX() + avoidX * avoidanceStrength;
+                        double newZ = agent->cust->getPosZ() + avoidZ * avoidanceStrength;
+                        
+                        // Only apply if valid position
+                        if (store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35)) {
+                            agent->cust->setPosition(newX, newZ);
+                        }
+                    }
+                }
+                
+                // Update agent behavior
+                agent->update(dt, store);
+            }
+            
+            // Resolve any remaining collisions (push agents apart)
+            for (auto& agent : agents) {
+                if (store.hasPhysicsWorld() && agent->cust) {
+                    collisionManager.resolveCollisions(agent->cust.get(), 0.35);
+                }
+            }
+            
+            // Remove dead agents
             agents.erase(std::remove_if(agents.begin(), agents.end(),
                 [&](const std::unique_ptr<Agent>& a) {
-                    bool alive = a->update(dt, store);
-                    return !alive || a->cust->currentEdgeIndex == -1;
+                    bool shouldRemove = !a->cust || a->cust->currentEdgeIndex == -1;
+                    if (shouldRemove && a->cust) {
+                        collisionManager.unregisterAgent(a->cust.get());
+                    }
+                    return shouldRemove;
                 }),
                 agents.end());
         }
@@ -223,6 +296,45 @@ int main() {
                 }
             }
         }
+        
+        // Draw physics world obstacles (for debugging)
+        if (store.hasPhysicsWorld()) {
+            const PhysicsWorld& physics = store.getPhysicsWorld();
+            
+            // Draw obstacles (shelves)
+            sf::RectangleShape obstacleShape;
+            obstacleShape.setFillColor(sf::Color(150, 100, 50, 100)); // Semi-transparent brown
+            obstacleShape.setOutlineColor(sf::Color(200, 150, 100));
+            obstacleShape.setOutlineThickness(1.0f);
+            
+            for (const auto& obstacle : physics.getObstacles()) {
+                float width = static_cast<float>((obstacle.maxX - obstacle.minX) * PIXELS_PER_METER);
+                float height = static_cast<float>((obstacle.maxZ - obstacle.minZ) * PIXELS_PER_METER);
+                obstacleShape.setSize(sf::Vector2f(width, height));
+                obstacleShape.setPosition(
+                    static_cast<float>(obstacle.minX * PIXELS_PER_METER + dynamicOffsetX),
+                    static_cast<float>(obstacle.minZ * PIXELS_PER_METER + dynamicOffsetY)
+                );
+                window.draw(obstacleShape);
+            }
+            
+            // Draw boundaries (walls) - optional, can be commented out if too cluttered
+            sf::RectangleShape boundaryShape;
+            boundaryShape.setFillColor(sf::Color(100, 100, 150, 80)); // Semi-transparent blue
+            boundaryShape.setOutlineColor(sf::Color(150, 150, 200));
+            boundaryShape.setOutlineThickness(1.0f);
+            
+            for (const auto& boundary : physics.getBoundaries()) {
+                float width = static_cast<float>((boundary.maxX - boundary.minX) * PIXELS_PER_METER);
+                float height = static_cast<float>((boundary.maxZ - boundary.minZ) * PIXELS_PER_METER);
+                boundaryShape.setSize(sf::Vector2f(width, height));
+                boundaryShape.setPosition(
+                    static_cast<float>(boundary.minX * PIXELS_PER_METER + dynamicOffsetX),
+                    static_cast<float>(boundary.minZ * PIXELS_PER_METER + dynamicOffsetY)
+                );
+                window.draw(boundaryShape);
+            }
+        }
 
         sf::CircleShape agentShape(6.0f);
         agentShape.setOrigin(3.0f, 3.0f);
@@ -256,8 +368,8 @@ int main() {
                     }
                 }
 
-                agentShape.setPosition(currX * PIXELS_PER_METER + OFFSET_X,
-                                       currZ * PIXELS_PER_METER + OFFSET_Y);
+                agentShape.setPosition(currX * PIXELS_PER_METER + dynamicOffsetX,
+                                       currZ * PIXELS_PER_METER + dynamicOffsetY);
                 window.draw(agentShape);
             }
         }

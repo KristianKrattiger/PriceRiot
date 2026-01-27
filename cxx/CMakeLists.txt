@@ -70,6 +70,9 @@ set(COMMON_SOURCES
         environment/navmesh.cpp
         environment/navmesh_generator.cpp
         environment/navmesh_pathfinder.cpp
+        environment/physics.cpp
+        environment/physics_generator.cpp
+        environment/collision_manager.cpp
         engine/navmesh_visualizer.cpp
 )
 

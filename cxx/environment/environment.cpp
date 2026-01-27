@@ -6,6 +6,7 @@
 #include "cell.h"
 #include "storeLayout.h"
 #include "navmesh_generator.h"
+#include "physics_generator.h"
 
 #include <algorithm>
 #include <cmath>
@@ -253,6 +254,11 @@ void StoreGraph::printAllEdgeCells() const {}
 void StoreGraph::buildNavMesh(const StoreLayout& layout) {
     navmesh = NavMeshGenerator::generate(*this, layout);
     navmeshBuilt = true;
+}
+
+void StoreGraph::buildPhysicsWorld(const StoreLayout& layout) {
+    physicsWorld = PhysicsGenerator::generate(*this, layout);
+    physicsWorldBuilt = true;
 }
 void StoreGraph::printAllEdgeCellsWithShelves(const YAML::Node& storeRoot, priceriot::Products& catalog) const {}
 

@@ -4,6 +4,7 @@
 #include "../environment/environment.h"
 #include "../environment/navmesh_pathfinder.h"
 #include "../environment/storeLayout.h"
+#include "../environment/physics.h"
 #include "basket.h"
 #include "shelf.h"
 #include <random>
@@ -142,8 +143,12 @@ Decision DefaultBehavior::decide(Customer& c, const ICustomerBehaviorContext& ct
         double dz = waypoint.second - c.posZ;
         double dist = std::sqrt(dx * dx + dz * dz);
         
+        // Velocity-based waypoint threshold: use distance we can travel in one frame
+        // This makes agents smoothly approach waypoints rather than stopping abruptly
+        double waypointThreshold = std::max(0.2, c.speed * ctx.dt * 1.5); // At least 0.2m, or 1.5x frame movement
+        
         // If reached waypoint, move to next
-        if (dist < 0.5) { // 0.5m threshold
+        if (dist < waypointThreshold) {
             c.incrementWaypointIndex();
             if (c.getCurrentWaypointIndex() >= c.getNavmeshPath().size()) {
                 // Reached end of path, clear it
@@ -154,15 +159,68 @@ Decision DefaultBehavior::decide(Customer& c, const ICustomerBehaviorContext& ct
                 return {Decision::Move};
             }
         } else {
-            // Move toward waypoint
+            // Move toward waypoint with velocity-based movement
             double moveDist = c.speed * ctx.dt;
-            if (moveDist > dist) moveDist = dist;
             
-            double moveX = (dx / dist) * moveDist;
-            double moveZ = (dz / dist) * moveDist;
+            // Normalize direction
+            double dirX = (dist > 1e-6) ? dx / dist : 0.0;
+            double dirZ = (dist > 1e-6) ? dz / dist : 0.0;
             
-            c.posX += moveX;
-            c.posZ += moveZ;
+            // Don't overshoot waypoint
+            if (moveDist > dist) {
+                moveDist = dist;
+            }
+            
+            double moveX = dirX * moveDist;
+            double moveZ = dirZ * moveDist;
+            
+            // Check if new position would be valid (obstacle check)
+            double newX = c.posX + moveX;
+            double newZ = c.posZ + moveZ;
+            double agentRadius = 0.35;
+            
+            if (ctx.store.hasPhysicsWorld()) {
+                const PhysicsWorld& physics = ctx.store.getPhysicsWorld();
+                
+                // Check if position is valid
+                if (!physics.isValidPosition(newX, newZ, agentRadius)) {
+                    // Try reduced movement (half speed)
+                    newX = c.posX + moveX * 0.5;
+                    newZ = c.posZ + moveZ * 0.5;
+                    if (!physics.isValidPosition(newX, newZ, agentRadius)) {
+                        // Try perpendicular movement (slide along obstacle)
+                        double perpX = -dirZ;
+                        double perpZ = dirX;
+                        newX = c.posX + perpX * moveDist * 0.3;
+                        newZ = c.posZ + perpZ * moveDist * 0.3;
+                        if (!physics.isValidPosition(newX, newZ, agentRadius)) {
+                            // Try opposite perpendicular
+                            newX = c.posX - perpX * moveDist * 0.3;
+                            newZ = c.posZ - perpZ * moveDist * 0.3;
+                            if (!physics.isValidPosition(newX, newZ, agentRadius)) {
+                                // Still blocked, try to push away from obstacle
+                                Circle agentCircle(c.posX, c.posZ, agentRadius);
+                                double normalX, normalZ, penetration;
+                                if (physics.getCollisionInfo(agentCircle, normalX, normalZ, penetration)) {
+                                    // Push away from obstacle
+                                    newX = c.posX + normalX * moveDist * 0.5;
+                                    newZ = c.posZ + normalZ * moveDist * 0.5;
+                                    if (!physics.isValidPosition(newX, newZ, agentRadius)) {
+                                        // Completely blocked, wait
+                                        return {Decision::Wait};
+                                    }
+                                } else {
+                                    // No collision info, wait
+                                    return {Decision::Wait};
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Update position using setter
+            c.setPosition(newX, newZ);
             
             // Update distOnEdge for backward compatibility (approximate)
             if (c.currentEdgeIndex >= 0) {

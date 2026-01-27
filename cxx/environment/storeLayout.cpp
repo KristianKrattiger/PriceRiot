@@ -105,4 +105,54 @@ void StoreLayout::buildGeometry(const StoreGraph& graph) {
     }
 }
 
+void StoreLayout::getBoundingBox(float& minX, float& maxX, float& minZ, float& maxZ) const {
+    if (nodeGeoms.empty() && edgeGeoms.empty()) {
+        minX = maxX = minZ = maxZ = 0.0f;
+        return;
+    }
+    
+    bool first = true;
+    
+    // Check all node corners
+    for (const auto& [id, nodeGeo] : nodeGeoms) {
+        auto corners = nodeGeo.getCorners();
+        for (const auto& corner : corners) {
+            if (first) {
+                minX = maxX = corner.x;
+                minZ = maxZ = corner.y;
+                first = false;
+            } else {
+                minX = std::min(minX, corner.x);
+                maxX = std::max(maxX, corner.x);
+                minZ = std::min(minZ, corner.y);
+                maxZ = std::max(maxZ, corner.y);
+            }
+        }
+    }
+    
+    // Check all edge corners
+    for (const auto& [id, edgeGeo] : edgeGeoms) {
+        auto corners = edgeGeo.getCorners();
+        for (const auto& corner : corners) {
+            if (first) {
+                minX = maxX = corner.x;
+                minZ = maxZ = corner.y;
+                first = false;
+            } else {
+                minX = std::min(minX, corner.x);
+                maxX = std::max(maxX, corner.x);
+                minZ = std::min(minZ, corner.y);
+                maxZ = std::max(maxZ, corner.y);
+            }
+        }
+    }
+}
+
+void StoreLayout::getCenter(float& centerX, float& centerZ) const {
+    float minX, maxX, minZ, maxZ;
+    getBoundingBox(minX, maxX, minZ, maxZ);
+    centerX = (minX + maxX) / 2.0f;
+    centerZ = (minZ + maxZ) / 2.0f;
+}
+
 } // namespace priceriot

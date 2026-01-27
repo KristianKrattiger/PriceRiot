@@ -1,6 +1,7 @@
 #include "navmesh_pathfinder.h"
 #include <queue>
 #include <unordered_set>
+#include <unordered_map>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -179,18 +180,94 @@ std::vector<NavMeshPathfinder::PathPoint> NavMeshPathfinder::smoothPath(
         return {{startX, startZ}, {endX, endZ}};
     }
     
-    std::vector<PathPoint> path;
-    path.emplace_back(startX, startZ);
+    // String pulling algorithm: try to skip waypoints when we have direct line of sight
+    std::vector<PathPoint> smoothedPath;
+    smoothedPath.emplace_back(startX, startZ);
     
-    // Add polygon centers (waypoints)
+    // Collect all waypoints (polygon centers + endpoints)
+    std::vector<PathPoint> waypoints;
+    waypoints.emplace_back(startX, startZ);
     for (int polyIdx : polygonPath) {
         auto [centerX, centerZ] = navmesh.getPolygon(polyIdx).getCenter();
-        path.emplace_back(centerX, centerZ);
+        waypoints.emplace_back(centerX, centerZ);
+    }
+    waypoints.emplace_back(endX, endZ);
+    
+    if (waypoints.size() <= 2) {
+        return waypoints;
     }
     
-    path.emplace_back(endX, endZ);
+    // Greedy string pulling: start from first waypoint, try to reach as far as possible
+    size_t currentIdx = 0;
+    while (currentIdx < waypoints.size() - 1) {
+        // Try to find the furthest waypoint we can reach directly
+        size_t furthestReachable = currentIdx + 1;
+        
+        for (size_t i = currentIdx + 2; i < waypoints.size(); ++i) {
+            // Check if we can reach this waypoint directly (line of sight through polygons)
+            if (hasLineOfSight(waypoints[currentIdx], waypoints[i], polygonPath, navmesh, currentIdx, i)) {
+                furthestReachable = i;
+            } else {
+                // Can't reach further, stop here
+                break;
+            }
+        }
+        
+        // Add the furthest reachable waypoint
+        smoothedPath.push_back(waypoints[furthestReachable]);
+        currentIdx = furthestReachable;
+    }
     
-    return path;
+    // Ensure endpoint is included
+    if (smoothedPath.back().x != endX || smoothedPath.back().z != endZ) {
+        smoothedPath.emplace_back(endX, endZ);
+    }
+    
+    return smoothedPath;
+}
+
+bool NavMeshPathfinder::hasLineOfSight(
+    const PathPoint& from, const PathPoint& to,
+    const std::vector<int>& polygonPath,
+    const NavMesh& navmesh,
+    size_t fromPolyIdx, size_t toPolyIdx) {
+    
+    // Simple line-of-sight check: sample points along the line and verify they're in valid polygons
+    const int samples = 8;
+    double dx = (to.x - from.x) / samples;
+    double dz = (to.z - from.z) / samples;
+    
+    // Determine which polygon indices to check (fromPolyIdx and toPolyIdx are waypoint indices)
+    // Waypoint 0 is start point, waypoint 1 is first polygon center, etc.
+    size_t startPoly = (fromPolyIdx > 0) ? fromPolyIdx - 1 : 0;
+    size_t endPoly = std::min(toPolyIdx - 1, polygonPath.size() - 1);
+    
+    // Build set of valid polygon indices to check
+    std::unordered_set<int> validPolygons;
+    for (size_t p = startPoly; p <= endPoly && p < polygonPath.size(); ++p) {
+        validPolygons.insert(polygonPath[p]);
+    }
+    
+    // Sample points along the line
+    for (int i = 1; i < samples; ++i) {
+        double checkX = from.x + dx * i;
+        double checkZ = from.z + dz * i;
+        
+        // Check if this point is in any polygon along the path
+        bool inValidPolygon = false;
+        for (int polyIdx : validPolygons) {
+            if (navmesh.getPolygon(polyIdx).containsPoint(checkX, checkZ)) {
+                inValidPolygon = true;
+                break;
+            }
+        }
+        
+        if (!inValidPolygon) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 } // namespace priceriot

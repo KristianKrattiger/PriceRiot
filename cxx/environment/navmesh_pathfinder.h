@@ -69,6 +69,14 @@ private:
                                              const NavMesh& navmesh,
                                              double startX, double startZ,
                                              double endX, double endZ);
+    
+    /**
+     * Check if there's a line of sight between two points through the navmesh.
+     */
+    static bool hasLineOfSight(const PathPoint& from, const PathPoint& to,
+                              const std::vector<int>& polygonPath,
+                              const NavMesh& navmesh,
+                              size_t fromPolyIdx, size_t toPolyIdx);
 };
 
 } // namespace priceriot

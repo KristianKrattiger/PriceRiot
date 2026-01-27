@@ -37,6 +37,10 @@ namespace priceriot {
         std::map<int, EdgeGeometry> edgeGeoms; // Key: EdgeID
 
         void buildGeometry(const StoreGraph& graph);
+        
+        // Calculate bounding box of the entire store layout
+        void getBoundingBox(float& minX, float& maxX, float& minZ, float& maxZ) const;
+        void getCenter(float& centerX, float& centerZ) const;
     };
 
 } // namespace priceriot

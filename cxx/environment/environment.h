@@ -13,6 +13,7 @@
 #include "cell.h"
 #include "products.h"
 #include "navmesh.h"
+#include "physics.h"
 
 namespace priceriot {
 
@@ -211,6 +212,11 @@ public:
     void buildNavMesh(const StoreLayout& layout);
     const NavMesh& getNavMesh() const noexcept { return navmesh; }
     bool hasNavMesh() const noexcept { return navmeshBuilt; }
+    
+    // Physics world support
+    void buildPhysicsWorld(const StoreLayout& layout);
+    const PhysicsWorld& getPhysicsWorld() const noexcept { return physicsWorld; }
+    bool hasPhysicsWorld() const noexcept { return physicsWorldBuilt; }
 
     priceriot::Products catalog;
 
@@ -224,6 +230,9 @@ private:
     
     NavMesh navmesh;
     bool navmeshBuilt = false;
+    
+    PhysicsWorld physicsWorld;
+    bool physicsWorldBuilt = false;
 };
 
 } // namespace priceriot
