@@ -1,18 +1,18 @@
 #include "products.h"
 
-#include <fstream>
-#include <sstream>
-#include <map>
-#include <iostream>   // for std::cout, std::cerr
-#include <iomanip>    // for std::setw, std::left
-#include <utility>
 #include <algorithm>
+#include <fstream>
+#include <iomanip>  // for std::setw, std::left
+#include <iostream> // for std::cout, std::cerr
+#include <map>
+#include <sstream>
+#include <utility>
 
 namespace priceriot {
 
 // Minimal CSV loader used at construction time.
 // Expected columns (header optional): sku,name,category,price,popularity
-static std::map<int, Product> loadProductsFromCSV_min(const std::string& path) {
+static std::map<int, Product> loadProductsFromCSV_min(const std::string &path) {
     std::map<int, Product> out;
 
     std::ifstream in(path);
@@ -22,22 +22,27 @@ static std::map<int, Product> loadProductsFromCSV_min(const std::string& path) {
     }
 
     auto trim = [](std::string s) {
-        const auto issp = [](unsigned char c){ return std::isspace(c); };
-        s.erase(s.begin(), std::find_if(s.begin(), s.end(), [&](unsigned char c){ return !issp(c); }));
-        s.erase(std::find_if(s.rbegin(), s.rend(), [&](unsigned char c){ return !issp(c); }).base(), s.end());
+        const auto issp = [](unsigned char c) { return std::isspace(c); };
+        s.erase(s.begin(),
+                std::find_if(s.begin(), s.end(), [&](unsigned char c) { return !issp(c); }));
+        s.erase(
+            std::find_if(s.rbegin(), s.rend(), [&](unsigned char c) { return !issp(c); }).base(),
+            s.end());
         return s;
     };
 
     std::string line;
     bool first = true;
     while (std::getline(in, line)) {
-        if (line.empty()) continue;
+        if (line.empty())
+            continue;
 
         // If first line looks like a header, skip it.
         if (first) {
             first = false;
             std::string lower = line;
-            std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c){ return std::tolower(c); });
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
             if (lower.find("sku") != std::string::npos && lower.find("name") != std::string::npos) {
                 // header row
                 continue;
@@ -48,30 +53,45 @@ static std::map<int, Product> loadProductsFromCSV_min(const std::string& path) {
         std::string field;
 
         // sku
-        if (!std::getline(ss, field, ',')) continue;
+        if (!std::getline(ss, field, ','))
+            continue;
         int sku = 0;
-        try { sku = std::stoi(trim(field)); } catch (...) { continue; }
+        try {
+            sku = std::stoi(trim(field));
+        } catch (...) {
+            continue;
+        }
 
         // name
         std::string name;
-        if (!std::getline(ss, name, ',')) name.clear();
+        if (!std::getline(ss, name, ','))
+            name.clear();
         name = trim(name);
 
         // category
         std::string category;
-        if (!std::getline(ss, category, ',')) category.clear();
+        if (!std::getline(ss, category, ','))
+            category.clear();
         category = trim(category);
 
         // price
         double price = 0.0;
         if (std::getline(ss, field, ',')) {
-            try { price = std::stod(trim(field)); } catch (...) { price = 0.0; }
+            try {
+                price = std::stod(trim(field));
+            } catch (...) {
+                price = 0.0;
+            }
         }
 
         // popularity
         double popularity = 0.0;
         if (std::getline(ss, field, ',')) {
-            try { popularity = std::stod(trim(field)); } catch (...) { popularity = 0.0; }
+            try {
+                popularity = std::stod(trim(field));
+            } catch (...) {
+                popularity = 0.0;
+            }
         }
 
         out[sku] = Product{sku, name, category, price, popularity};
@@ -82,21 +102,16 @@ static std::map<int, Product> loadProductsFromCSV_min(const std::string& path) {
 
 // ---------------- Products ----------------
 
-Products::Products()
-: productsMap_(loadProductsFromCSV_min("../../data/raw/products.csv")) {}
+Products::Products() : productsMap_(loadProductsFromCSV_min("../../data/raw/products.csv")) {}
 
 // Add/Update by fields
-void Products::addProduct(int sku,
-                          const std::string& name,
-                          double price,
-                          const std::string& category,
-                          double popularity)
-{
+void Products::addProduct(int sku, const std::string &name, double price,
+                          const std::string &category, double popularity) {
     productsMap_[sku] = Product{sku, name, category, price, popularity};
 }
 
 // Add/Update by struct
-void Products::addProduct(const Product& product) {
+void Products::addProduct(const Product &product) {
     productsMap_[product.sku] = product;
 }
 
@@ -136,7 +151,7 @@ bool Products::updatePrice(int sku, double newPrice) {
     return false;
 }
 
-bool Products::updateCategory(int sku, const std::string& newCategory) {
+bool Products::updateCategory(int sku, const std::string &newCategory) {
     if (auto it = productsMap_.find(sku); it != productsMap_.end()) {
         it->second.category = newCategory;
         return true;
@@ -158,18 +173,13 @@ bool Products::updatePopularity(int sku, double newPopularity) {
 
 void Products::printProducts() const {
     std::cout << "=== Products (" << productsMap_.size() << ") ===\n";
-    std::cout << std::left << std::setw(8)  << "SKU"
-              << std::setw(24) << "Name"
-              << std::setw(18) << "Category"
-              << std::setw(10) << "Price"
-              << std::setw(12) << "Popularity" << "\n";
+    std::cout << std::left << std::setw(8) << "SKU" << std::setw(24) << "Name" << std::setw(18)
+              << "Category" << std::setw(10) << "Price" << std::setw(12) << "Popularity" << "\n";
 
-    for (const auto& [sku, p] : productsMap_) {
-        std::cout << std::left << std::setw(8)  << sku
-                  << std::setw(24) << p.name
-                  << std::setw(18) << p.category
-                  << std::setw(10) << p.price
-                  << std::setw(12) << p.popularity << "\n";
+    for (const auto &[sku, p] : productsMap_) {
+        std::cout << std::left << std::setw(8) << sku << std::setw(24) << p.name << std::setw(18)
+                  << p.category << std::setw(10) << p.price << std::setw(12) << p.popularity
+                  << "\n";
     }
     std::cout << std::endl;
 }

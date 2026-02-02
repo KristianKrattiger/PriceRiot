@@ -66,7 +66,7 @@ set(COMMON_SOURCES
         environment/store_init.cpp
         tools/io_csv.cpp
         environment/store_inventory.cpp
-        environment/storeLayout.cpp
+        environment/store_layout.cpp
         environment/navmesh.cpp
         environment/navmesh_generator.cpp
         environment/navmesh_pathfinder.cpp
@@ -76,10 +76,19 @@ set(COMMON_SOURCES
         engine/navmesh_visualizer.cpp
 )
 
-add_executable(simulator
+# Conditionally add MinGW _setjmp workaround
+set(SIMULATOR_SOURCES
         engine/sim.cpp
         ${COMMON_SOURCES}
 )
+
+# Add MinGW _setjmp fix if using MinGW/GCC on Windows
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(APPEND SIMULATOR_SOURCES tools/mingw_setjmp_fix.c)
+    message(STATUS "Adding MinGW _setjmp workaround for SFML FreeType compatibility")
+endif()
+
+add_executable(simulator ${SIMULATOR_SOURCES})
 
 target_include_directories(simulator PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/agents
@@ -96,5 +105,44 @@ target_link_libraries(simulator PRIVATE
         sfml-system
         sfml-window
 )
+
+# MinGW: SFML's bundled FreeType references _setjmp; link mingwex to resolve it.
+# This is needed for FreeType which uses setjmp/longjmp
+# SFML's FreeType is compiled for MSVCRT runtime, so we need to ensure compatibility
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(STATUS "Detected MinGW/GCC on Windows - fixing _setjmp reference for SFML FreeType")
+    
+    # Get the MinGW library directory
+    get_filename_component(MINGW_BIN_DIR ${CMAKE_C_COMPILER} DIRECTORY)
+    get_filename_component(MINGW_ROOT_DIR ${MINGW_BIN_DIR} DIRECTORY)
+    set(MINGW_LIB_DIR "${MINGW_ROOT_DIR}/lib")
+    message(STATUS "MinGW lib directory: ${MINGW_LIB_DIR}")
+    
+    # Try to find mingwex which provides _setjmp/_longjmp
+    # Search in MinGW lib directory and standard paths
+    find_library(MINGWEX_LIB 
+        NAMES mingwex libmingwex
+        PATHS 
+        ${MINGW_LIB_DIR}
+        ${MINGW_ROOT_DIR}/${CMAKE_C_COMPILER_TARGET}/lib
+        ${CMAKE_C_COMPILER}/../../lib
+        ${CMAKE_C_COMPILER}/../../${CMAKE_C_COMPILER_TARGET}/lib
+    )
+    
+    if(MINGWEX_LIB)
+        target_link_libraries(simulator PRIVATE ${MINGWEX_LIB})
+        message(STATUS "Found mingwex at: ${MINGWEX_LIB}")
+    else()
+        # Add MinGW lib directory to linker search path
+        target_link_directories(simulator PRIVATE ${MINGW_LIB_DIR})
+        # Link by name - linker will search the added directory
+        target_link_libraries(simulator PRIVATE mingwex)
+        message(STATUS "Linking mingwex by name (searching in ${MINGW_LIB_DIR})")
+    endif()
+    
+    # Force linker to include mingwex by adding it as a linker option
+    # This ensures it's linked even if find_library didn't locate it
+    target_link_options(simulator PRIVATE "-lmingwex")
+endif()
 
 target_compile_definitions(simulator PRIVATE YAML_CPP_STATIC_DEFINE)

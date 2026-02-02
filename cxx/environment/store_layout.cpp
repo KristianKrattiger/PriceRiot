@@ -1,29 +1,31 @@
-#include "storeLayout.h"
-#include <cmath>
+#include "store_layout.h"
 #include <algorithm>
+#include <cmath>
 
 namespace priceriot {
 
 // Ray-Box Intersection Helper (2D Top Down X, Z)
 // Box centered at Cx, Cz with half-extents Hx, Hz
 // Ray Origin Ox, Oz, Direction Dx, Dz
-static sf::Vector2f intersectRayBox(float Ox, float Oz, float Dx, float Dz, 
-                                    float Cx, float Cz, float Hx, float Hz) {
+static sf::Vector2f intersectRayBox(float Ox, float Oz, float Dx, float Dz, float Cx, float Cz,
+                                    float Hx, float Hz) {
     // We want the point where the ray *leaves* the box.
     // Simple slab method
     // In our case, the Ray Origin is the center of the box (Cx, Cz).
     // So we just need to scale D to hit the boundary.
-    
+
     // Avoid div by zero
-    if (std::abs(Dx) < 1e-5f) Dx = (Dx > 0 ? 1e-5f : -1e-5f);
-    if (std::abs(Dz) < 1e-5f) Dz = (Dz > 0 ? 1e-5f : -1e-5f);
+    if (std::abs(Dx) < 1e-5f)
+        Dx = (Dx > 0 ? 1e-5f : -1e-5f);
+    if (std::abs(Dz) < 1e-5f)
+        Dz = (Dz > 0 ? 1e-5f : -1e-5f);
 
     float t_x = (Dx > 0) ? (Hx / Dx) : (-Hx / Dx);
     float t_z = (Dz > 0) ? (Hz / Dz) : (-Hz / Dz);
 
     // The ray hits the nearest boundary
     float t = std::min(t_x, t_z);
-    
+
     return sf::Vector2f(Cx + Dx * t, Cz + Dz * t);
 }
 
@@ -42,22 +44,20 @@ std::vector<sf::Vector2f> EdgeGeometry::getCorners() const {
     float hw = width / 2.0f;
     float dx = std::cos(angle + 1.5708f) * hw; // 90 deg rotation
     float dz = std::sin(angle + 1.5708f) * hw;
-    
-    return {
-        {startX - dx, startZ - dz},
-        {startX + dx, startZ + dz},
-        {endX + dx, endZ + dz},
-        {endX - dx, endZ - dz}
-    };
+
+    return {{startX - dx, startZ - dz},
+            {startX + dx, startZ + dz},
+            {endX + dx, endZ + dz},
+            {endX - dx, endZ - dz}};
 }
 
-void StoreLayout::buildGeometry(const StoreGraph& graph) {
+void StoreLayout::buildGeometry(const StoreGraph &graph) {
     nodeGeoms.clear();
     edgeGeoms.clear();
 
     // 1. Process Nodes
-    const auto& nodes = graph.getNodes();
-    for (const auto& n : nodes) {
+    const auto &nodes = graph.getNodes();
+    for (const auto &n : nodes) {
         NodeGeometry ng;
         ng.x = static_cast<float>(n->getX());
         ng.z = static_cast<float>(n->getZ());
@@ -67,29 +67,29 @@ void StoreLayout::buildGeometry(const StoreGraph& graph) {
     }
 
     // 2. Process Edges
-    const auto& edges = graph.getEdges();
-    for (const auto& e : edges) {
+    const auto &edges = graph.getEdges();
+    for (const auto &e : edges) {
         int uID = graph.nodeAt(e->getFromNode()).getNodeId();
         int vID = graph.nodeAt(e->getToNode()).getNodeId();
 
-        NodeGeometry& nU = nodeGeoms[uID];
-        NodeGeometry& nV = nodeGeoms[vID];
+        NodeGeometry &nU = nodeGeoms[uID];
+        NodeGeometry &nV = nodeGeoms[vID];
 
         // Vector U -> V
         float dx = nV.x - nU.x;
         float dz = nV.z - nU.z;
-        float dist = std::sqrt(dx*dx + dz*dz);
+        float dist = std::sqrt(dx * dx + dz * dz);
         float dirX = dx / dist;
         float dirZ = dz / dist;
 
         // Calculate exit points from the Node Hubs
         // Start Point: From Center U towards V, clipped to U's box
-        sf::Vector2f pStart = intersectRayBox(nU.x, nU.z, dirX, dirZ,
-            nU.x, nU.z, nU.width/2.0f, nU.length/2.0f);
-        
+        sf::Vector2f pStart =
+            intersectRayBox(nU.x, nU.z, dirX, dirZ, nU.x, nU.z, nU.width / 2.0f, nU.length / 2.0f);
+
         // End Point: From Center V towards U (Reverse dir), clipped to V's box
-        sf::Vector2f pEnd = intersectRayBox(nV.x, nV.z, -dirX, -dirZ,
-            nV.x, nV.z, nV.width/2.0f, nV.length/2.0f);
+        sf::Vector2f pEnd = intersectRayBox(nV.x, nV.z, -dirX, -dirZ, nV.x, nV.z, nV.width / 2.0f,
+                                            nV.length / 2.0f);
 
         EdgeGeometry eg;
         eg.startX = pStart.x;
@@ -105,18 +105,18 @@ void StoreLayout::buildGeometry(const StoreGraph& graph) {
     }
 }
 
-void StoreLayout::getBoundingBox(float& minX, float& maxX, float& minZ, float& maxZ) const {
+void StoreLayout::getBoundingBox(float &minX, float &maxX, float &minZ, float &maxZ) const {
     if (nodeGeoms.empty() && edgeGeoms.empty()) {
         minX = maxX = minZ = maxZ = 0.0f;
         return;
     }
-    
+
     bool first = true;
-    
+
     // Check all node corners
-    for (const auto& [id, nodeGeo] : nodeGeoms) {
+    for (const auto &[id, nodeGeo] : nodeGeoms) {
         auto corners = nodeGeo.getCorners();
-        for (const auto& corner : corners) {
+        for (const auto &corner : corners) {
             if (first) {
                 minX = maxX = corner.x;
                 minZ = maxZ = corner.y;
@@ -129,11 +129,11 @@ void StoreLayout::getBoundingBox(float& minX, float& maxX, float& minZ, float& m
             }
         }
     }
-    
+
     // Check all edge corners
-    for (const auto& [id, edgeGeo] : edgeGeoms) {
+    for (const auto &[id, edgeGeo] : edgeGeoms) {
         auto corners = edgeGeo.getCorners();
-        for (const auto& corner : corners) {
+        for (const auto &corner : corners) {
             if (first) {
                 minX = maxX = corner.x;
                 minZ = maxZ = corner.y;
@@ -148,7 +148,7 @@ void StoreLayout::getBoundingBox(float& minX, float& maxX, float& minZ, float& m
     }
 }
 
-void StoreLayout::getCenter(float& centerX, float& centerZ) const {
+void StoreLayout::getCenter(float &centerX, float &centerZ) const {
     float minX, maxX, minZ, maxZ;
     getBoundingBox(minX, maxX, minZ, maxZ);
     centerX = (minX + maxX) / 2.0f;

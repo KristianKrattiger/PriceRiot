@@ -1,9 +1,9 @@
 #ifndef PHYSICS_GENERATOR_H
 #define PHYSICS_GENERATOR_H
 
-#include "physics.h"
 #include "environment.h"
-#include "storeLayout.h"
+#include "physics.h"
+#include "store_layout.h"
 
 namespace priceriot {
 
@@ -12,24 +12,26 @@ namespace priceriot {
  * Creates AABB obstacles for shelves and boundaries.
  */
 class PhysicsGenerator {
-public:
+  public:
     /**
      * Generate physics world from store graph and layout.
      * Creates obstacles from shelf protrusions and store boundaries.
      */
-    static PhysicsWorld generate(const StoreGraph& graph, const StoreLayout& layout);
-    
-private:
+    static PhysicsWorld generate(const StoreGraph &graph, const StoreLayout &layout);
+
+  private:
     /**
      * Generate obstacles from edge shelf protrusions.
      * Creates AABB obstacles along edges where shelves protrude.
      */
-    static void generateShelfObstacles(const StoreGraph& graph, const StoreLayout& layout, PhysicsWorld& world);
-    
+    static void generateShelfObstacles(const StoreGraph &graph, const StoreLayout &layout,
+                                       PhysicsWorld &world);
+
     /**
      * Generate store boundaries (walls) from layout bounding box.
      */
-    static void generateBoundaries(const StoreLayout& layout, PhysicsWorld& world, double wallThickness = 0.5);
+    static void generateBoundaries(const StoreLayout &layout, PhysicsWorld &world,
+                                   double wallThickness = 0.5);
 };
 
 } // namespace priceriot

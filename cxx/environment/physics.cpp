@@ -3,11 +3,11 @@
 
 namespace priceriot {
 
-void PhysicsWorld::addObstacle(const AABB& obstacle) {
+void PhysicsWorld::addObstacle(const AABB &obstacle) {
     obstacles.push_back(obstacle);
 }
 
-void PhysicsWorld::addBoundary(const AABB& boundary) {
+void PhysicsWorld::addBoundary(const AABB &boundary) {
     boundaries.push_back(boundary);
 }
 
@@ -16,21 +16,21 @@ void PhysicsWorld::clear() {
     boundaries.clear();
 }
 
-bool PhysicsWorld::checkCollision(const Circle& agent) const {
+bool PhysicsWorld::checkCollision(const Circle &agent) const {
     // Check against obstacles
-    for (const auto& obstacle : obstacles) {
+    for (const auto &obstacle : obstacles) {
         if (obstacle.intersects(agent)) {
             return true;
         }
     }
-    
+
     // Check against boundaries
-    for (const auto& boundary : boundaries) {
+    for (const auto &boundary : boundaries) {
         if (boundary.intersects(agent)) {
             return true;
         }
     }
-    
+
     return false;
 }
 
@@ -38,13 +38,14 @@ bool PhysicsWorld::checkCollision(double x, double z, double radius) const {
     return checkCollision(Circle(x, z, radius));
 }
 
-bool PhysicsWorld::getCollisionInfo(const Circle& agent, double& normalX, double& normalZ, double& penetration) const {
+bool PhysicsWorld::getCollisionInfo(const Circle &agent, double &normalX, double &normalZ,
+                                    double &penetration) const {
     double bestPenetration = std::numeric_limits<double>::max();
     double bestNormalX = 0.0, bestNormalZ = 0.0;
     bool foundCollision = false;
-    
+
     // Check obstacles
-    for (const auto& obstacle : obstacles) {
+    for (const auto &obstacle : obstacles) {
         double nx, nz, pen;
         if (checkCollisionWithObstacle(agent, obstacle, nx, nz, pen)) {
             if (pen < bestPenetration) {
@@ -55,9 +56,9 @@ bool PhysicsWorld::getCollisionInfo(const Circle& agent, double& normalX, double
             }
         }
     }
-    
+
     // Check boundaries
-    for (const auto& boundary : boundaries) {
+    for (const auto &boundary : boundaries) {
         double nx, nz, pen;
         if (checkCollisionWithObstacle(agent, boundary, nx, nz, pen)) {
             if (pen < bestPenetration) {
@@ -68,35 +69,36 @@ bool PhysicsWorld::getCollisionInfo(const Circle& agent, double& normalX, double
             }
         }
     }
-    
+
     if (foundCollision) {
         normalX = bestNormalX;
         normalZ = bestNormalZ;
         penetration = bestPenetration;
     }
-    
+
     return foundCollision;
 }
 
-bool PhysicsWorld::checkCollisionWithObstacle(const Circle& agent, const AABB& obstacle,
-                                               double& normalX, double& normalZ, double& penetration) const {
+bool PhysicsWorld::checkCollisionWithObstacle(const Circle &agent, const AABB &obstacle,
+                                              double &normalX, double &normalZ,
+                                              double &penetration) const {
     if (!obstacle.intersects(agent)) {
         return false;
     }
-    
+
     // Find closest point on AABB to circle center
     double closestX = std::clamp(agent.x, obstacle.minX, obstacle.maxX);
     double closestZ = std::clamp(agent.z, obstacle.minZ, obstacle.maxZ);
-    
+
     // Calculate vector from closest point to circle center
     double dx = agent.x - closestX;
     double dz = agent.z - closestZ;
     double distSq = dx * dx + dz * dz;
-    
+
     if (distSq > agent.radius * agent.radius) {
         return false; // Not actually colliding
     }
-    
+
     // Calculate penetration and normal
     double dist = std::sqrt(distSq);
     if (dist < 1e-6) {
@@ -105,9 +107,9 @@ bool PhysicsWorld::checkCollisionWithObstacle(const Circle& agent, const AABB& o
         double distToMaxX = obstacle.maxX - agent.x;
         double distToMinZ = agent.z - obstacle.minZ;
         double distToMaxZ = obstacle.maxZ - agent.z;
-        
+
         double minDist = std::min({distToMinX, distToMaxX, distToMinZ, distToMaxZ});
-        
+
         if (minDist == distToMinX) {
             normalX = -1.0;
             normalZ = 0.0;
@@ -131,11 +133,11 @@ bool PhysicsWorld::checkCollisionWithObstacle(const Circle& agent, const AABB& o
         normalZ = dz / dist;
         penetration = agent.radius - dist;
     }
-    
+
     return true;
 }
 
-void PhysicsWorld::resolveCollision(Circle& agent) const {
+void PhysicsWorld::resolveCollision(Circle &agent) const {
     double normalX, normalZ, penetration;
     if (getCollisionInfo(agent, normalX, normalZ, penetration)) {
         // Push agent out of collision

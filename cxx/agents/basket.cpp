@@ -1,32 +1,29 @@
 #include "basket.h"
-#include "transaction.h"
-#include "products.h"
 #include "customer.h" // Needed for recalcBasketSize
+#include "products.h"
+#include "transaction.h"
 
 #include <algorithm>
 #include <iostream>
 #include <map>
-#include <unordered_map>
-#include <set>
 #include <numeric> // Added for std::accumulate
+#include <set>
+#include <unordered_map>
 
 namespace priceriot {
 
-Basket::Basket(std::shared_ptr<Customer> c)
-    : customer_(std::move(c)), running_total_(0.0)
-{}
+Basket::Basket(std::shared_ptr<Customer> c) : customer_(std::move(c)), running_total_(0.0) {}
 
-void Basket::addProduct(const Product& p) {
+void Basket::addProduct(const Product &p) {
     products_.push_back(p);
     running_total_ += p.price;
 }
 
-bool Basket::removeProduct(const Product& p) {
-    const auto it = std::find_if(products_.begin(),
-                                 products_.end(),
-                                 [&](const Product& existing) {return existing.sku == p.sku;}
-                                 );
-    if (it == products_.end()) return false;
+bool Basket::removeProduct(const Product &p) {
+    const auto it = std::find_if(products_.begin(), products_.end(),
+                                 [&](const Product &existing) { return existing.sku == p.sku; });
+    if (it == products_.end())
+        return false;
     running_total_ -= it->price;
     products_.erase(it);
     return true;
@@ -49,61 +46,51 @@ std::shared_ptr<Customer> Basket::getCustomer() const {
     return customer_;
 }
 
-Transaction Basket::toTransaction(int transID,
-                                  int satisfaction,
-                                  const std::string& ts) const {
-    std::map<int,LineItem> grouped;
+Transaction Basket::toTransaction(int transID, int satisfaction, const std::string &ts) const {
+    std::map<int, LineItem> grouped;
 
-    for (const auto& p : products_) {
+    for (const auto &p : products_) {
         auto it = grouped.find(p.sku);
         if (it != grouped.end()) {
-            it->second.quantity   += 1;
-            it->second.total      += p.price;
-            it->second.name        = p.name;
+            it->second.quantity += 1;
+            it->second.total += p.price;
+            it->second.name = p.name;
         } else {
-            grouped.emplace(
-                p.sku,
-                LineItem(p.sku, p.price, 1, p.name)
-            );
+            grouped.emplace(p.sku, LineItem(p.sku, p.price, 1, p.name));
         }
     }
 
     std::vector<LineItem> items;
     items.reserve(grouped.size());
-    for (auto& [_, item] : grouped) {
+    for (auto &[_, item] : grouped) {
         item.total = item.pricePerUnit * item.quantity;
         items.push_back(std::move(item));
     }
 
-    return {
-        customer_->getId(),
-        transID,
-        std::move(items),
-        satisfaction,
-        ts
-    };
+    return {customer_->getId(), transID, std::move(items), satisfaction, ts};
 }
 
 int estimateBasketSize(double mean, double dispersion_k, std::default_random_engine &engine) {
-    if (mean <= 0) return 0;
-    
+    if (mean <= 0)
+        return 0;
+
     double r = dispersion_k;
     double p = dispersion_k / (dispersion_k + mean);
-    int r_int = std::max(1, static_cast<int>(r)); 
+    int r_int = std::max(1, static_cast<int>(r));
 
     std::negative_binomial_distribution<int> nbd(r_int, p);
     int items = nbd(engine);
 
-    return std::max(1, items); 
+    return std::max(1, items);
 }
 
-void populateBasket(Basket& basket,
-                    const std::map<int, Product>& productsMap,
-                    std::default_random_engine& engine) {
-    
+void populateBasket(Basket &basket, const std::map<int, Product> &productsMap,
+                    std::default_random_engine &engine) {
+
     // recalcBasketSize is defined in customer.h/.cpp within namespace priceriot
     int uniqueCount = recalcBasketSize(basket.getCustomer(), engine);
-    if (uniqueCount <= 0) return;
+    if (uniqueCount <= 0)
+        return;
 
     bool allowOverbuy = std::bernoulli_distribution(0.2)(engine);
     int overbuyBudget = 0;
@@ -115,25 +102,25 @@ void populateBasket(Basket& basket,
 
     // std::cout << "[DEBUG] unique=" << uniqueCount << " overbuy=" << overbuyBudget << "\n";
 
-    std::unordered_map<std::string, std::vector<const Product*>> byCategory;
-    for (auto const& [_, p] : productsMap) {
+    std::unordered_map<std::string, std::vector<const Product *>> byCategory;
+    for (auto const &[_, p] : productsMap) {
         byCategory[p.category].push_back(&p);
     }
 
     std::vector<std::string> cats;
-    std::vector<double>      weights;
+    std::vector<double> weights;
     cats.reserve(byCategory.size());
     weights.reserve(byCategory.size());
-    for (auto const& [cat, vec] : byCategory) {
-        double sumPop = std::accumulate(
-            vec.begin(), vec.end(), 0.0,
-            [](double s, const Product* p){ return s + p->popularity; }
-        );
+    for (auto const &[cat, vec] : byCategory) {
+        double sumPop =
+            std::accumulate(vec.begin(), vec.end(), 0.0,
+                            [](double s, const Product *p) { return s + p->popularity; });
         cats.push_back(cat);
         weights.push_back(sumPop);
     }
 
-    if (weights.empty()) return; 
+    if (weights.empty())
+        return;
 
     std::discrete_distribution<size_t> catDist(weights.begin(), weights.end());
     std::uniform_int_distribution<int> qtyDist(1, 3);
@@ -153,14 +140,16 @@ void populateBasket(Basket& basket,
     }
 
     int qtyCursor = 0;
-    for (auto const& cat : pickedCats) {
-        if (qtyCursor >= totalBudget) break;
+    for (auto const &cat : pickedCats) {
+        if (qtyCursor >= totalBudget)
+            break;
 
         auto &vec = byCategory[cat];
-        if (vec.empty()) continue;
+        if (vec.empty())
+            continue;
 
         std::uniform_int_distribution<size_t> prodDist(0, vec.size() - 1);
-        const Product* choice = vec[prodDist(engine)];
+        const Product *choice = vec[prodDist(engine)];
 
         int qty = qtyDist(engine);
         if (qtyCursor + qty > totalBudget) {
