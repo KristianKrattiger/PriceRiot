@@ -8,6 +8,8 @@ PriceRiot simulates a physical retail store environment where autonomous custome
 
 ## Core Architecture
 
+For a detailed view of the C++ layering, data flows, and module responsibilities, see [cxx/docs/ARCHITECTURE.md](cxx/docs/ARCHITECTURE.md).
+
 ### C++ Simulation Engine
 - **Agent-based simulation** with per-tick customer decision making
 - **Graph-based store layout** (nodes: entrances, exits, junctions, registers, stockrooms; edges: aisles with cells)
@@ -29,6 +31,17 @@ PriceRiot simulates a physical retail store environment where autonomous custome
 - **Density-aware navigation** with congestion and personal space calculations
 - **Shelf protrusion modeling** affecting aisle width and lane capacity
 
+### ✅ Navigation Mesh & Physics
+- **Navmesh generation** from baked layout geometry (walkable polygons + connectivity)
+- **A\* navmesh pathfinding** with **funnel algorithm** path smoothing (avoids corner-sticking)
+- **Hybrid navigation**: navmesh movement when available, edge-based fallback for compatibility
+- **Physics world generation** from layout:
+  - Shelf protrusions → obstacle AABBs
+  - Layout bounding box → boundary walls
+- **Collision handling**:
+  - Agent-agent separation + steering avoidance
+  - Agent-obstacle/boundary validation and collision resolution
+
 ### ✅ Shelf Inventory System
 - **Three-tier hierarchy**: Bays → Faces → Slots
 - **Stall-based customer positioning** aligned with shelf bays
@@ -38,9 +51,10 @@ PriceRiot simulates a physical retail store environment where autonomous custome
 - **Inventory pool** for backstock management
 
 ### ✅ Customer Agents
+- **Two behavior modes**: **Default** (browsing with preferred aisles, impulsivity‑scaled picks) and **Mission Shopper** (focused SKU list, minimal wandering, quick exit after list completion)
 - **Behavior profiles**: basket size multiplier, price sensitivity, impulsivity, trip purpose (StockUp/TopUp/Mission)
-- **State machine**: Entering → Browsing → HeadingToCheckout → InQueue → HeadingToExit → Done
-- **BFS pathfinding** for navigation between nodes
+- **State machine**: Entering → Browsing / MissionBrowse → HeadingToCheckout → InQueue → HeadingToExit → Done
+- **BFS + navmesh pathfinding** for navigation between nodes and to mission cells
 - **Product interaction**: shelf browsing, product picking, basket building
 - **Customer history tracking**: total spent, loyalty rating, purchase frequency, churn prediction
 
@@ -58,6 +72,15 @@ PriceRiot simulates a physical retail store environment where autonomous custome
   - Time scale control
   - Active agent count
   - Store topology stats
+- **Navmesh debug overlays** (when navmesh is enabled/built):
+  - Show polygons
+  - Show connections
+  - Show polygon centers
+  - Show agent paths
+- **Physics debug overlay** (when physics world is built):
+  - Obstacles (shelves) rendered as semi-transparent brown rectangles
+  - Boundaries (walls) rendered as semi-transparent blue rectangles
+- **Store debug overlay**: optional **Show Node/Edge Labels** (node `id: type`, edge `id (from->to)`); requires a font at `fonts/arial.ttf` or, on Windows, `C:\Windows\Fonts\arial.ttf`
 - **Agent color coding**: browsing (white), shopping (magenta), paid (green), idle (cyan)
 
 ### ✅ Staff & Restocking
@@ -75,7 +98,10 @@ PriceRiot simulates a physical retail store environment where autonomous custome
 
 ```
 PriceRiot-main/
+├── .clang-format                 # C++ code style (4 spaces, column 100)
 ├── cxx/                          # C++ simulation engine
+│   ├── docs/
+│   │   └── ARCHITECTURE.md       # Layered architecture and data flows
 │   ├── agents/                   # Customer and staff agents
 │   │   ├── customer.cpp/h        # Customer class with behavior profiles
 │   │   ├── customer_behavior.cpp/h  # Behavior strategy pattern
@@ -83,14 +109,22 @@ PriceRiot-main/
 │   │   └── staff.cpp/h           # StockBoy restocking logic
 │   ├── environment/              # Store environment
 │   │   ├── environment.cpp/h     # StoreGraph (nodes, edges, cells)
+│   │   ├── cell.cpp/h            # EdgeCell (shelf integration, stalls)
 │   │   ├── products.cpp/h        # Product catalog
 │   │   ├── shelf.cpp/h           # Shelf inventory system
 │   │   ├── store_inventory.cpp/h # InventoryPool (backstock)
 │   │   ├── store_init.cpp/h      # YAML loading and initialization
-│   │   └── storeLayout.cpp/h     # Geometry for visualization
+│   │   ├── store_layout.cpp/h    # Geometry for visualization
+│   │   ├── navmesh.cpp/h         # Walkable polygons and spatial queries
+│   │   ├── navmesh_generator.cpp/h   # Build navmesh from layout
+│   │   ├── navmesh_pathfinder.cpp/h  # A* pathfinding and funnel smoothing
+│   │   ├── physics.cpp/h         # Obstacles and boundaries
+│   │   ├── physics_generator.cpp/h   # Generate physics from layout
+│   │   └── collision_manager.cpp/h   # Agent-agent and agent-obstacle collision
 │   ├── engine/                   # Simulation loop
 │   │   ├── sim.cpp/h             # Main simulation with SFML
-│   │   └── transaction.cpp/h     # Transaction data structures
+│   │   ├── transaction.cpp/h     # Transaction data structures
+│   │   └── navmesh_visualizer.cpp/h  # SFML navmesh rendering
 │   └── tools/
 │       └── io_csv.cpp/h          # CSV import/export
 ├── python/                       # Python analytics layer
@@ -102,7 +136,7 @@ PriceRiot-main/
 ├── data/
 │   ├── raw/                      # Input CSV datasets
 │   └── processed/                # Generated analytics outputs
-└── CMakeLists.txt                # Build configuration
+└── cxx/CMakeLists.txt            # Build configuration
 ```
 
 ## Installation
@@ -174,6 +208,8 @@ The build produces:
    - Adjust spawn rate and time scale
    - Pause/resume simulation
    - Monitor active agents and store topology
+   - Toggle navmesh overlays (polygons/connections/centers/paths) when available
+   - **Store Debug** → **Show Node/Edge Labels** to display node/edge IDs and types (requires font; see Visualization)
 
 ### Python Analytics (Current)
 
@@ -255,11 +291,20 @@ The store is defined as a graph with nodes and edges:
 
 ## Technical Details
 
+### Documentation
+
+The C++ codebase includes Doxygen-style comments in headers (environment, cell, shelf, behavior, navmesh, etc.) and section markers in implementation files. Use `doxygen` with a Doxyfile to generate HTML/PDF docs if desired.
+
 ### Customer Behavior System
 
 Customers use a **strategy pattern** with `ICustomerBehavior` interface:
-- `DefaultBehavior`: State machine with BFS pathfinding
+- `DefaultBehavior`: State machine with BFS pathfinding, plus navmesh-based movement when available
 - Extensible for custom behaviors (e.g., price-sensitive, brand-loyal)
+
+### Navigation Mesh & Physics (C++)
+
+- **Navmesh** is built from the baked store geometry and supports polygon queries + A\* pathfinding; a **funnel algorithm** smooths paths to avoid corner-sticking.
+- **PhysicsWorld** is generated from shelf protrusions and store bounds and is used to validate movement and resolve collisions.
 
 ### Shelf System Architecture
 
