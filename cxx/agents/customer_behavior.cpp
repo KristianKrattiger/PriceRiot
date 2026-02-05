@@ -167,6 +167,27 @@ static std::vector<int> getSkusInCell(const priceriot::EdgeCell &cell) {
     return skus;
 }
 
+/** Returns true if the given shelf side has any inventory. */
+static bool sideHasInventory(const priceriot::ShelfSide &side) {
+    for (int b = 0; b < side.bay_count; ++b)
+        for (int f = 0; f < side.bays[b].face_count; ++f)
+            for (int sl = 0; sl < side.bays[b].faces[f].slot_count; ++sl)
+                if (side.bays[b].faces[f].slots[sl].qty_on_face > 0)
+                    return true;
+    return false;
+}
+
+/** Determine which side to interact with based on inventory availability. */
+static bool chooseInteractionSide(const priceriot::EdgeCell &cell) {
+    bool leftHas = sideHasInventory(cell.get_left());
+    bool rightHas = sideHasInventory(cell.get_right());
+    if (leftHas && !rightHas) return true;  // Left side
+    if (rightHas && !leftHas) return false; // Right side
+    // Both or neither: pick randomly
+    static std::mt19937 sideRng(std::random_device{}());
+    return sideRng() % 2 == 0;
+}
+
 Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ctx) {
     // #region agent log
     { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:decide_entry\",\"message\":\"decide() called\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"edgeIdx\":" << c.currentEdgeIndex << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << ",\"pathSize\":" << c.getNavmeshPath().size() << ",\"waypointIdx\":" << c.getCurrentWaypointIndex() << ",\"dwellTicks\":" << c.getDwellTicks() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
@@ -466,12 +487,15 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     // Check if cell has inventory - if so, dwell first
                     if (const auto skus = getSkusInCell(currentEdge.cells[cellIdx]);
                         !skus.empty()) {
+                        // Set sideband interaction state
+                        c.setTargetCellIdx(cellIdx);
+                        c.setInteractingLeftSide(chooseInteractionSide(currentEdge.cells[cellIdx]));
                         // Randomized dwell: 2-5 seconds at 60 ticks/sec = 120-300 ticks
                         static std::mt19937 dwellRng(std::random_device{}());
                         int dwellTicks = 120 + static_cast<int>(dwellRng() % 181);
                         c.setDwellTicks(dwellTicks);
                         // #region agent log
-                        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer_behavior.cpp:dwell_start\",\"message\":\"Starting dwell at new cell\",\"data\":{\"customerId\":" << c.getId() << ",\"cellIdx\":" << cellIdx << ",\"skuCount\":" << skus.size() << ",\"dwellTicks\":" << dwellTicks << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+                        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer_behavior.cpp:dwell_start\",\"message\":\"Starting dwell at new cell\",\"data\":{\"customerId\":" << c.getId() << ",\"cellIdx\":" << cellIdx << ",\"skuCount\":" << skus.size() << ",\"dwellTicks\":" << dwellTicks << ",\"leftSide\":" << (c.isInteractingLeftSide()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
                         // #endregion
                         return {Decision::Wait};
                     }
@@ -803,16 +827,30 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
     if (state == Exiting && isNearExit())
         return {Decision::Despawn};
 
-    // Cell attraction: steer browsing agents toward cell centers
+    // Cell attraction: steer browsing agents toward stall positions (offset from shelf)
     if (state == Browsing && c.currentEdgeIndex >= 0 && !c.isUsingNavmesh()) {
         const auto &edge = ctx.store.edgeAt(c.currentEdgeIndex);
         if (edge.getCellCount() > 0) {
             int cellIdx = static_cast<int>(c.distOnEdge / edge.getCellLength());
             cellIdx = std::clamp(cellIdx, 0, edge.getCellCount() - 1);
 
-            auto [cellX, cellZ] = ctx.store.getCellCenter(c.currentEdgeIndex, cellIdx);
-            double dx = cellX - c.posX;
-            double dz = cellZ - c.posZ;
+            // Use stall position if interacting with a cell, otherwise use cell center
+            double targetX, targetZ;
+            if (c.getTargetCellIdx() == cellIdx) {
+                // Steer toward stall position (offset toward shelf side)
+                auto [stallX, stallZ] = ctx.store.getStallPosition(
+                    c.currentEdgeIndex, cellIdx, c.isInteractingLeftSide());
+                targetX = stallX;
+                targetZ = stallZ;
+            } else {
+                // Just passing through - steer toward cell center
+                auto [cellX, cellZ] = ctx.store.getCellCenter(c.currentEdgeIndex, cellIdx);
+                targetX = cellX;
+                targetZ = cellZ;
+            }
+
+            double dx = targetX - c.posX;
+            double dz = targetZ - c.posZ;
             double dist = std::sqrt(dx * dx + dz * dz);
 
             if (dist > 0.1) { // Only correct if >10cm off
@@ -896,17 +934,26 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         state = MissionBrowse;
         missionSkus.clear();
         missionIndex = 0;
+        
+        // FIX: Only select SKUs that are actually available on shelves
+        // First, collect all SKUs that exist on shelves (have at least one location)
+        std::vector<int> availableSkus;
         const auto &catalog = ctx.store.catalog.getProductsMap();
-        if (!catalog.empty()) {
-            std::vector<int> skuList;
-            skuList.reserve(catalog.size());
-            for (const auto &kv : catalog)
-                skuList.push_back(kv.first);
+        for (const auto &kv : catalog) {
+            int sku = kv.first;
+            auto locations = ctx.store.findEdgesContainingSku(sku);
+            if (!locations.empty()) {
+                availableSkus.push_back(sku);
+            }
+        }
+        
+        // Now randomly select from available SKUs only
+        if (!availableSkus.empty()) {
             static std::mt19937 rngMission(std::random_device{}());
-            std::shuffle(skuList.begin(), skuList.end(), rngMission);
-            size_t n = std::min(skuList.size(), static_cast<size_t>(2 + rngMission() % 3));
+            std::shuffle(availableSkus.begin(), availableSkus.end(), rngMission);
+            size_t n = std::min(availableSkus.size(), static_cast<size_t>(2 + rngMission() % 3));
             for (size_t i = 0; i < n; ++i)
-                missionSkus.push_back(skuList[i]);
+                missionSkus.push_back(availableSkus[i]);
         }
     }
 
@@ -981,7 +1028,12 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             static std::mt19937 rngMb(std::random_device{}());
             size_t idx = static_cast<size_t>(rngMb()) % loci.size();
             int e = loci[idx].first, cell = loci[idx].second;
-            auto [tx, tz] = ctx.store.getCellCenter(e, cell);
+            // Determine which side has the SKU and path to stall position
+            const auto &targetCell = ctx.store.edgeAt(e).cells[static_cast<size_t>(cell)];
+            bool leftSide = chooseInteractionSide(targetCell);
+            c.setTargetCellIdx(cell);
+            c.setInteractingLeftSide(leftSide);
+            auto [tx, tz] = ctx.store.getStallPosition(e, cell, leftSide);
             double sx = c.posX, sz = c.posZ;
             if (sx == 0.0 && sz == 0.0) {
                 int nodeIdx = ctx.store.edgeAt(e).getFromNode();

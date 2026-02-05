@@ -226,6 +226,12 @@ class Customer {
         behaviorState.currentWaypointIndex++;
     }
 
+    // Sideband interaction state
+    [[nodiscard]] int getTargetCellIdx() const noexcept { return behaviorState.targetCellIdx; }
+    void setTargetCellIdx(int idx) noexcept { behaviorState.targetCellIdx = idx; }
+    [[nodiscard]] bool isInteractingLeftSide() const noexcept { return behaviorState.interactingLeftSide; }
+    void setInteractingLeftSide(bool left) noexcept { behaviorState.interactingLeftSide = left; }
+
   private:
     struct BehaviorProfile {
         double basketSizeMultiplier = 1.0;
@@ -246,6 +252,8 @@ class Customer {
         int lastShopCell = -1;
         int lastPickAttemptCell = -1; // Track cell where pick was already attempted
         int targetNodeId = -1;
+        int targetCellIdx = -1;        // Cell index for sideband positioning
+        bool interactingLeftSide = true; // Which shelf side to position toward
 
         // Navmesh path state
         std::vector<std::pair<double, double>> navmeshPath; // Waypoints (x, z)

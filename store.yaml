@@ -238,3 +238,105 @@ edges:
     orientation: fwd
     shelf_left: 0.4
     shelf_right: 0.4
+  - id: 8
+    from: 4
+    to: 2
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.4
+    shelf_right: 0.4
+  - id: 9
+    from: 5
+    to: 3
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.4
+    shelf_right: 0.4
+  - id: 10
+    from: 6
+    to: 2
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.4
+    shelf_right: 0.4
+
+# Full planogram: per-edge layout. Edges 1 (Entrance->Junction) and 4 (Register->Exit) have no
+# products; aisle edges 2,3,5,6,7,8,9,10 use edge-level left_side/right_side for all cells.
+planogram:
+  edges:
+    "1":  # Entrance corridor - no products
+      left_side: { bay_count: 0 }
+      right_side: { bay_count: 0 }
+    "4":  # Register->Exit - no products
+      left_side: { bay_count: 0 }
+      right_side: { bay_count: 0 }
+    "2":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "3":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "5":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "6":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "7":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "8":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "9":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "10":
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+
+# Fallback for any edge not listed in planogram.edges (kept for compatibility)
+left_side:
+  bay_count: 1
+  planogram:
+    - bay: 0
+      face: 0
+      slot: 0
+      sku: 1
+      on_shelf_qty: 10
+right_side:
+  bay_count: 1
+  planogram:
+    - bay: 0
+      face: 0
+      slot: 0
+      sku: 2
+      on_shelf_qty: 10
+
+# Checkout queue configurations
+# Each register has defined queue waypoints where customers line up (FIFO)
+checkout_queues:
+  - register_id: 7  # References node ID of the register
+    processing_time: 5.0  # Average checkout time in seconds
+    waypoints:
+      - { x: 30.0, z: 0.0 }   # Position 0: at counter
+      - { x: 28.5, z: 0.0 }   # Position 1: 1.5m behind
+      - { x: 27.0, z: 0.0 }   # Position 2: 3.0m behind
+      - { x: 25.5, z: 0.0 }   # Position 3: 4.5m behind
+      - { x: 24.0, z: 0.0 }   # Position 4: 6.0m behind
+      - { x: 22.5, z: 0.0 }   # Position 5: 7.5m behind

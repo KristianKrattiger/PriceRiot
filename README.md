@@ -57,6 +57,7 @@ For a detailed view of the C++ layering, data flows, and module responsibilities
 - **BFS + navmesh pathfinding** for navigation between nodes and to mission cells
 - **Product interaction**: shelf browsing, product picking, basket building
 - **Customer history tracking**: total spent, loyalty rating, purchase frequency, churn prediction
+- **Mission shopper SKU validation**: mission shoppers only select SKUs that are actually stocked on shelves, ensuring all items in their mission list can be collected
 
 ### ✅ Basket & Transactions
 - **Dynamic basket building** based on customer behavior and shelf availability

@@ -352,6 +352,8 @@ class StoreGraph {
     std::vector<std::pair<int, int>> findEdgesContainingSku(int sku) const;
     /** World (x, z) of cell center; interpolates along edge from node to node. */
     std::pair<double, double> getCellCenter(int edgeIdx, int cellIdx) const;
+    /** World (x, z) of stall position offset from cell center toward shelf side. */
+    std::pair<double, double> getStallPosition(int edgeIdx, int cellIdx, bool leftSide) const;
     /** (edgeIdx, cellIdx) of the cell whose center is closest to (x,z); (-1,-1) if no cells. */
     std::pair<int, int> findClosestCell(double x, double z) const;
 

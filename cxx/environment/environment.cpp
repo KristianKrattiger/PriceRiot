@@ -387,6 +387,41 @@ std::pair<double, double> StoreGraph::getCellCenter(int edgeIdx, int cellIdx) co
     return {x, z};
 }
 
+std::pair<double, double> StoreGraph::getStallPosition(int edgeIdx, int cellIdx, bool leftSide) const {
+    auto [cx, cz] = getCellCenter(edgeIdx, cellIdx);
+    if (cx == 0.0 && cz == 0.0)
+        return {0.0, 0.0};
+
+    const Edge &edge = edgeAt(edgeIdx);
+    const Node &from = nodeAt(edge.getFromNode());
+    const Node &to = nodeAt(edge.getToNode());
+
+    // Edge direction (normalized)
+    double dx = to.getX() - from.getX();
+    double dz = to.getZ() - from.getZ();
+    double len = std::sqrt(dx * dx + dz * dz);
+    if (len < 1e-9)
+        return {cx, cz};
+    dx /= len;
+    dz /= len;
+
+    // Perpendicular direction: left = (-dz, dx), right = (dz, -dx)
+    double perpX = leftSide ? -dz : dz;
+    double perpZ = leftSide ? dx : -dx;
+
+    // Offset from centerline toward the shelf side, but stay inside walkable area
+    // clearAisleWidth is the walkable width; position at edge minus personal radius
+    double clearWidth = edge.getClearWidth();
+    double personalRadius = edge.getPersonalRadius();
+    double offset = (clearWidth / 2.0) - personalRadius;
+    if (offset < 0.1)
+        offset = 0.1; // Minimum offset to avoid centerline overlap
+
+    double stallX = cx + perpX * offset;
+    double stallZ = cz + perpZ * offset;
+    return {stallX, stallZ};
+}
+
 std::pair<int, int> StoreGraph::findClosestCell(double x, double z) const {
     int bestEdge = -1;
     int bestCell = -1;
