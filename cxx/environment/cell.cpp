@@ -27,6 +27,28 @@ bool EdgeCell::containsSku(std::uint32_t sku) const noexcept {
     return scan(leftSide) || scan(rightSide);
 }
 
+bool EdgeCell::takeOneBySku(std::uint32_t sku) noexcept {
+    auto try_side = [sku](ShelfSide &s) {
+        for (std::uint8_t b = 0; b < s.bay_count; ++b) {
+            Bay &bay = s.bays[b];
+            if (bay.blocked)
+                continue;
+            for (std::uint8_t f = 0; f < bay.face_count; ++f) {
+                BayFace &face = bay.faces[f];
+                for (std::uint8_t sl = 0; sl < face.slot_count; ++sl) {
+                    if (face.slots[sl].sku_id == sku && face.slots[sl].qty_on_face > 0) {
+                        auto res = face.take_one(std::optional<std::uint8_t>(sl));
+                        if (res.second)
+                            return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+    return try_side(leftSide) || try_side(rightSide);
+}
+
 std::optional<std::uint8_t> EdgeCell::select_stall_exact(const SideBand &band,
                                                          std::uint16_t bay) noexcept {
     if (bay < band.count) {

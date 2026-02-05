@@ -17,12 +17,14 @@ namespace priceriot {
 class StoreGraph;
 class Basket;
 class Customer;
+class CheckoutQueueManager;
 
-/** Context passed to decide(): store graph, basket, and delta time. */
+/** Context passed to decide(): store graph, basket, delta time, and optional queue manager. */
 struct ICustomerBehaviorContext {
     const StoreGraph &store;
     const Basket &basket;
     double dt;
+    CheckoutQueueManager *queueManager = nullptr; // Optional: for checkout queue integration
 };
 
 /** Output of ICustomerBehavior::decide(): action type and optional target. */
@@ -38,17 +40,23 @@ class ICustomerBehavior {
     virtual ~ICustomerBehavior() = default;
     virtual void onEnterStore(Customer &c, const ICustomerBehaviorContext &ctx) const {}
     virtual Decision decide(Customer &c, const ICustomerBehaviorContext &ctx) = 0;
+    /** Current FSM state name for debugging (e.g. "Entering", "Browsing"). */
+    virtual const char *getStateName() const { return "Unknown"; }
+    /** Behavior type label for UI/log (e.g. "Default", "Mission"). */
+    virtual const char *getBehaviorType() const { return "Unknown"; }
 };
 
 /** Browsing behavior: prefers aisles, impulsivity-scaled picks, state machine through store. */
 class DefaultBehavior : public ICustomerBehavior {
   public:
-    enum State { Entering, Browsing, HeadingToCheckout, InQueue, HeadingToExit, Done };
+    enum State { Entering, Browsing, HeadingToCheckout, InQueue, HeadingToExit, Exiting, Done };
 
     DefaultBehavior();
 
     void onEnterStore(Customer &c, const ICustomerBehaviorContext &ctx) const override;
     Decision decide(Customer &c, const ICustomerBehaviorContext &ctx) override;
+    const char *getStateName() const override;
+    const char *getBehaviorType() const override { return "Default"; }
 
   private:
     mutable State state = Entering;
@@ -62,11 +70,13 @@ class DefaultBehavior : public ICustomerBehavior {
 /** Mission behavior: targets specific SKUs, minimal wandering, quick exit after list complete. */
 class MissionBehavior : public ICustomerBehavior {
   public:
-    enum State { Entering, MissionBrowse, HeadingToCheckout, InQueue, HeadingToExit, Done };
+    enum State { Entering, MissionBrowse, HeadingToCheckout, InQueue, HeadingToExit, Exiting, Done };
 
     MissionBehavior();
     void onEnterStore(Customer &c, const ICustomerBehaviorContext &ctx) const override;
     Decision decide(Customer &c, const ICustomerBehaviorContext &ctx) override;
+    const char *getStateName() const override;
+    const char *getBehaviorType() const override { return "Mission"; }
 
   private:
     mutable State state = Entering;

@@ -73,7 +73,9 @@ set(COMMON_SOURCES
         environment/physics.cpp
         environment/physics_generator.cpp
         environment/collision_manager.cpp
+        environment/checkout_queue.cpp
         engine/navmesh_visualizer.cpp
+        engine/behavior_log.cpp
 )
 
 # Conditionally add MinGW _setjmp workaround

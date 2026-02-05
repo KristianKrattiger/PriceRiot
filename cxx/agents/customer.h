@@ -20,6 +20,7 @@ namespace priceriot {
 class ICustomerBehavior;
 struct ICustomerBehaviorContext;
 class StoreGraph;
+class CheckoutQueueManager;
 
 class Customer {
   public:
@@ -28,7 +29,8 @@ class Customer {
     ~Customer();
 
     // --- Core Logic ---
-    bool update(float dt, const StoreGraph &store, const Basket &basket);
+    bool update(float dt, const StoreGraph &store, const Basket &basket,
+                CheckoutQueueManager *queueManager = nullptr);
 
     // --- Navigation State ---
     int currentEdgeIndex = -1;
@@ -116,6 +118,12 @@ class Customer {
     [[nodiscard]] double getImpulsivity() const {
         return behaviorProfile.impulsivity;
     }
+    [[nodiscard]] double getPatience() const {
+        return behaviorProfile.patience;
+    }
+    [[nodiscard]] double getCrowdSensitivity() const {
+        return behaviorProfile.crowdSensitivity;
+    }
 
     enum class TripPurpose { StockUp, TopUp, Mission };
     [[nodiscard]] TripPurpose getTripPurpose() const {
@@ -129,6 +137,11 @@ class Customer {
     [[nodiscard]] int getDwellTicks() const {
         return behaviorState.dwellTicks;
     }
+
+    // *****Last decision (for debugging)
+    [[nodiscard]] int getLastDecisionType() const { return lastDecisionType; }
+    [[nodiscard]] int getLastDecisionTargetId() const { return lastDecisionTargetId; }
+    [[nodiscard]] float getLastDecisionDuration() const { return lastDecisionDuration; }
     [[nodiscard]] int getLastShopCell() const {
         return behaviorState.lastShopCell;
     }
@@ -137,6 +150,31 @@ class Customer {
     void setLastShopCell(int cell) {
         behaviorState.lastShopCell = cell;
     }
+    [[nodiscard]] int getLastPickAttemptCell() const {
+        return behaviorState.lastPickAttemptCell;
+    }
+    void setLastPickAttemptCell(int cell) {
+        behaviorState.lastPickAttemptCell = cell;
+    }
+
+    // Queue state accessors
+    [[nodiscard]] int getQueueLaneId() const { return behaviorState.queueLaneId; }
+    void setQueueLaneId(int id) { behaviorState.queueLaneId = id; }
+    [[nodiscard]] int getQueuePosition() const { return behaviorState.queuePosition; }
+    void setQueuePosition(int pos) { behaviorState.queuePosition = pos; }
+    [[nodiscard]] bool isInQueue() const { return behaviorState.inQueue; }
+    void setInQueue(bool inQ) { behaviorState.inQueue = inQ; }
+
+    // Queue walk-to-waypoint accessors
+    [[nodiscard]] double getQueueTargetX() const { return behaviorState.queueTargetX; }
+    [[nodiscard]] double getQueueTargetZ() const { return behaviorState.queueTargetZ; }
+    void setQueueTarget(double x, double z) {
+        behaviorState.queueTargetX = x;
+        behaviorState.queueTargetZ = z;
+    }
+    [[nodiscard]] bool isWalkingToQueuePos() const { return behaviorState.walkingToQueuePos; }
+    void setWalkingToQueuePos(bool walking) { behaviorState.walkingToQueuePos = walking; }
+
     void setDwellTicks(int ticks);
     void updateLoyalty(int satisfaction);
     void recalcWeight();
@@ -196,6 +234,9 @@ class Customer {
         TripPurpose tripPurpose = TripPurpose::TopUp;
         double budgetPerTripMean = 35.0;
         double budgetPerTripSigma = 12.0;
+        // Queue lane selection traits
+        double patience = 0.5;        // 0-1: higher = more willing to walk farther for shorter queue
+        double crowdSensitivity = 0.3; // 0-1: higher = more averse to long queues
     };
 
     struct BehaviorState {
@@ -203,12 +244,23 @@ class Customer {
         bool browsing = true;
         int dwellTicks = 0;
         int lastShopCell = -1;
+        int lastPickAttemptCell = -1; // Track cell where pick was already attempted
         int targetNodeId = -1;
 
         // Navmesh path state
         std::vector<std::pair<double, double>> navmeshPath; // Waypoints (x, z)
         size_t currentWaypointIndex = 0;
         bool usingNavmesh = false;
+
+        // Queue state (for checkout)
+        int queueLaneId = -1;
+        int queuePosition = -1;
+        bool inQueue = false;
+
+        // Queue walk-to-waypoint state
+        double queueTargetX = 0.0;
+        double queueTargetZ = 0.0;
+        bool walkingToQueuePos = false;
     };
 
     BehaviorProfile behaviorProfile;
@@ -231,6 +283,11 @@ class Customer {
     std::string gender;
     double promotionResponse;
     bool churn;
+
+    // Last decision (for debugging / event log)
+    int lastDecisionType = 0;
+    int lastDecisionTargetId = -1;
+    float lastDecisionDuration = 0.0f;
 };
 
 // --- Free Functions ---

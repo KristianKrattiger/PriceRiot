@@ -46,6 +46,9 @@ class EdgeCell {
     /** True if this cell has the given SKU on left or right shelf. */
     [[nodiscard]] bool containsSku(std::uint32_t sku) const noexcept;
 
+    /** Take one unit of the given SKU from left or right shelf; decrements qty_on_face. Returns true if taken. */
+    bool takeOneBySku(std::uint32_t sku) noexcept;
+
     // Stall queries
     [[nodiscard]] std::optional<std::uint8_t>
     find_left_stall_exact(std::uint16_t bay) const noexcept;

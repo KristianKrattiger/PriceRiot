@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
-#include <iomanip>  // for std::setw, std::left
-#include <iostream> // for std::cout, std::cerr
+#include <iostream>
 #include <map>
 #include <sstream>
 #include <utility>
@@ -172,16 +171,7 @@ bool Products::updatePopularity(int sku, double newPopularity) {
 // }
 
 void Products::printProducts() const {
-    std::cout << "=== Products (" << productsMap_.size() << ") ===\n";
-    std::cout << std::left << std::setw(8) << "SKU" << std::setw(24) << "Name" << std::setw(18)
-              << "Category" << std::setw(10) << "Price" << std::setw(12) << "Popularity" << "\n";
-
-    for (const auto &[sku, p] : productsMap_) {
-        std::cout << std::left << std::setw(8) << sku << std::setw(24) << p.name << std::setw(18)
-                  << p.category << std::setw(10) << p.price << std::setw(12) << p.popularity
-                  << "\n";
-    }
-    std::cout << std::endl;
+    // No console output; use file-based behavior log or GUI for debugging.
 }
 
 } // namespace priceriot

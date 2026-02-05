@@ -5,13 +5,25 @@
 #include "../environment/environment.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
-#include <iostream>
+#include <fstream>
 #include <random>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace priceriot {
+
+namespace {
+constexpr bool kAgentLogEnabled = false;
+struct NullLogStream {
+    NullLogStream(const char *, std::ios_base::openmode) {}
+    explicit operator bool() const { return false; }
+    template <typename T> NullLogStream &operator<<(const T &) { return *this; }
+};
+using AgentLogStream = std::conditional_t<kAgentLogEnabled, std::ofstream, NullLogStream>;
+}
 
 // Default ctor
 Customer::Customer()
@@ -38,17 +50,24 @@ void Customer::setBehavior(ICustomerBehavior *behavior) noexcept {
 }
 
 // --- MAIN UPDATE LOGIC ---
-bool Customer::update(const float dt, const StoreGraph &store, const Basket &basket) {
+bool Customer::update(const float dt, const StoreGraph &store, const Basket &basket,
+                      CheckoutQueueManager *queueManager) {
     if (!behavior)
         return true;
 
     // 1. Setup Context
-    ICustomerBehaviorContext ctx{store, basket, (double)dt};
+    ICustomerBehaviorContext ctx{store, basket, (double)dt, queueManager};
 
     // 2. Ask Strategy for Decision
+    Decision dec = behavior->decide(*this, ctx);
+
+    // Store for debugging / event log
+    lastDecisionType = static_cast<int>(dec.type);
+    lastDecisionTargetId = dec.targetId;
+    lastDecisionDuration = dec.duration;
 
     // 3. Act on Decision
-    switch (auto [type, targetId, duration] = behavior->decide(*this, ctx); type) {
+    switch (dec.type) {
         case Decision::Wait:
             if (behaviorState.dwellTicks > 0)
                 behaviorState.dwellTicks--;
@@ -57,30 +76,28 @@ bool Customer::update(const float dt, const StoreGraph &store, const Basket &bas
         case Decision::Move:
             distOnEdge += speed * dt;
             if (currentEdgeIndex != -1) {
-                // Now StoreGraph is fully defined, so this works:
                 if (double len = store.edgeAt(currentEdgeIndex).getLength(); distOnEdge > len + 1.0)
                     distOnEdge = len;
             }
             break;
 
         case Decision::SwitchEdge:
-            std::cout << "Switching to edge " << distOnEdge << std::endl;
-            currentEdgeIndex = targetId;
+            currentEdgeIndex = dec.targetId;
             distOnEdge = 0.0;
             behaviorState.lastShopCell = -1;
             break;
 
         case Decision::PickProduct:
-            std::cout << "Picked " << targetId << std::endl;
-            behaviorState.dwellTicks += static_cast<int>(duration * 60);
+            behaviorState.dwellTicks += static_cast<int>(dec.duration * 60);
             break;
 
         case Decision::Checkout:
-            std::cout << "Checking out " << targetId << std::endl;
             break;
 
         case Decision::Despawn:
-            std::cout << "Despawning " << std::endl;
+            // #region agent log
+            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer.cpp:Despawn_handled\",\"message\":\"Despawn decision processed\",\"data\":{\"customerId\":" << id << ",\"prevEdgeIdx\":" << currentEdgeIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            // #endregion
             currentEdgeIndex = -1;
             return false;
     }

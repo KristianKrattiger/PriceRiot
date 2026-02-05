@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -19,6 +20,7 @@
 #include <unordered_set>
 #include <utility>
 #include <yaml-cpp/yaml.h>
+#include <type_traits>
 
 // --- Helper Functions ---
 template <class T> static size_t safe_size(const T *ptr) {
@@ -31,11 +33,20 @@ static inline std::string or_empty(const YAML::Node &n, const char *key) {
 }
 
 namespace {
+constexpr bool kAgentLogEnabled = false;
+struct NullLogStream {
+    NullLogStream(const char *, std::ios_base::openmode) {}
+    explicit operator bool() const { return false; }
+    template <typename T> NullLogStream &operator<<(const T &) { return *this; }
+};
+using AgentLogStream = std::conditional_t<kAgentLogEnabled, std::ofstream, NullLogStream>;
+
 static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
                                                priceriot::Catalog &catalog,
                                                priceriot::EdgeCell &cell,
                                                std::unordered_map<std::uint32_t, int> &onShelfQuantitySum,
-                                               int edgeId, int cellIndex) {
+                                               int edgeId, int cellIndex,
+                                               bool skipDefaultPlanogram) {
     using namespace priceriot;
     ShelfSide left{}, right{};
     if (auto pog = planRoot["planogram"]) {
@@ -53,13 +64,37 @@ static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
                         return;
                     }
                 }
+                // Edge-level planogram (no cells): apply to all cells of this edge
+                if (auto L = edgeY["left_side"])
+                    apply_planogram_to_side(L, catalog, left, onShelfQuantitySum);
+                if (auto R = edgeY["right_side"])
+                    apply_planogram_to_side(R, catalog, right, onShelfQuantitySum);
+                cell.set_left_inventory(left);
+                cell.set_right_inventory(right);
+                return;
             }
         }
+    }
+    if (skipDefaultPlanogram) {
+        cell.set_left_inventory(left);
+        cell.set_right_inventory(right);
+        return;
     }
     if (auto L = planRoot["left_side"])
         apply_planogram_to_side(L, catalog, left, onShelfQuantitySum);
     if (auto R = planRoot["right_side"])
         apply_planogram_to_side(R, catalog, right, onShelfQuantitySum);
+    // Fallback: if no planogram from YAML, put first catalog product on left so cells have stock
+    const auto &pm = catalog.getProductsMap();
+    if (!pm.empty() && !planRoot["left_side"] && !planRoot["right_side"]) {
+        const int firstSku = pm.begin()->first;
+        left.bay_count = 1;
+        left.bays[0].face_count = 1;
+        left.bays[0].faces[0].slot_count = 1;
+        left.bays[0].faces[0].slots[0].sku_id = static_cast<std::uint32_t>(firstSku);
+        left.bays[0].faces[0].slots[0].qty_on_face = 10;
+        onShelfQuantitySum[static_cast<std::uint32_t>(firstSku)] += 10;
+    }
     cell.set_left_inventory(left);
     cell.set_right_inventory(right);
 }
@@ -147,10 +182,17 @@ void StoreGraph::loadFromYaml(const std::string &path) {
     nodeIdToIndex.clear();
     edgeIdToIndex.clear();
     catalog = priceriot::Products();
+    
+    // #region agent log
+    { 
+        std::filesystem::path absPath = std::filesystem::absolute(path);
+        AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); 
+        if(lf) lf << "{\"location\":\"environment.cpp:loadFromYaml\",\"message\":\"Loading YAML file\",\"data\":{\"path\":\"" << path << "\",\"absolutePath\":\"" << absPath.string() << "\"},\"timestamp\":0}\n"; 
+    }
+    // #endregion
 
     YAML::Node root;
     try {
-        std::cout << "Loading store YAML: " << path << "\n";
         root = YAML::LoadFile(path);
         if (!root)
             throw std::runtime_error("Failed to load YAML: " + path);
@@ -201,11 +243,20 @@ void StoreGraph::loadFromYaml(const std::string &path) {
         const YAML::Node edgesY = root["edges"];
         edges.reserve(edgesY.size());
         std::unordered_set<int> seenEdgeIds;
+        
+        // #region agent log
+        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"location\":\"environment.cpp:loadEdges\",\"message\":\"Loading edges\",\"data\":{\"edgesYSize\":" << edgesY.size() << "},\"timestamp\":0}\n"; }
+        // #endregion
 
         for (const auto &e : edgesY) {
             const int id = e["id"].as<int>();
             const int fromId = e["from"].as<int>();
             const int toId = e["to"].as<int>();
+            
+            // #region agent log
+            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"location\":\"environment.cpp:loadEdge\",\"message\":\"Loading edge\",\"data\":{\"id\":" << id << ",\"from\":" << fromId << ",\"to\":" << toId << "},\"timestamp\":0}\n"; }
+            // #endregion
+            
             // ... (rest of edge loading same as before)
             if (!seenEdgeIds.insert(id).second)
                 throw std::runtime_error("Duplicate edge id");
@@ -251,13 +302,22 @@ void StoreGraph::loadFromYaml(const std::string &path) {
     if (auto pf = root["products_file"]; pf && pf.IsScalar())
         productsFile = pf.as<std::string>();
     std::filesystem::path productsPath = baseDir / productsFile;
-    YAML::Node productsRoot = YAML::LoadFile(productsPath.string());
-    std::unordered_map<std::string, int> totals_by_sku =
-        load_products_from_yaml(productsRoot, this->catalog);
+    std::unordered_map<std::string, int> totals_by_sku;
+    if (std::filesystem::exists(productsPath)) {
+        YAML::Node productsRoot = YAML::LoadFile(productsPath.string());
+        totals_by_sku = load_products_from_yaml(productsRoot, this->catalog);
+    } else {
+        this->catalog.addProduct(1, "Placeholder", 0.0, "misc", 0.0);
+    }
     std::unordered_map<std::uint32_t, int> onShelfQuantitySum;
 
     for (int e = 0; e < static_cast<int>(edges.size()); ++e) {
         Edge &E = *edges[e];
+        const int fromNodeIdx = E.getFromNode();
+        const int toNodeIdx = E.getToNode();
+        const bool skipDefaultPlanogram =
+            (nodeAt(fromNodeIdx).getNodeType() == Node::NodeType::Entrance ||
+             nodeAt(toNodeIdx).getNodeType() == Node::NodeType::Exit);
         const int nCells = E.getCellCount();
         const double cellLength_m = E.getCellLength();
         const double personalRadius_m = E.getPersonalRadius();
@@ -266,7 +326,7 @@ void StoreGraph::loadFromYaml(const std::string &path) {
         for (int c = 0; c < nCells; ++c) {
             priceriot::EdgeCell cell(E.getEdgeId() * 1000 + c, cellLength_m, personalRadius_m);
             attach_inventory_to_cell_from_yaml(root, this->catalog, cell, onShelfQuantitySum,
-                                               E.getEdgeId(), c);
+                                               E.getEdgeId(), c, skipDefaultPlanogram);
             E.cells.push_back(std::move(cell));
         }
     }
@@ -325,6 +385,29 @@ std::pair<double, double> StoreGraph::getCellCenter(int edgeIdx, int cellIdx) co
     const double x = from.getX() + (to.getX() - from.getX()) * frac;
     const double z = from.getZ() + (to.getZ() - from.getZ()) * frac;
     return {x, z};
+}
+
+std::pair<int, int> StoreGraph::findClosestCell(double x, double z) const {
+    int bestEdge = -1;
+    int bestCell = -1;
+    double bestDistSq = 1e99;
+    for (int e = 0; e < numEdges(); ++e) {
+        const Edge &edge = edgeAt(e);
+        const int n = edge.getCellCount();
+        if (n <= 0)
+            continue;
+        for (int c = 0; c < n; ++c) {
+            auto [cx, cz] = getCellCenter(e, c);
+            double dx = x - cx, dz = z - cz;
+            double d2 = dx * dx + dz * dz;
+            if (d2 < bestDistSq) {
+                bestDistSq = d2;
+                bestEdge = e;
+                bestCell = c;
+            }
+        }
+    }
+    return {bestEdge, bestCell};
 }
 
 } // namespace priceriot

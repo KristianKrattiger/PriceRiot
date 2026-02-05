@@ -100,8 +100,6 @@ void populateBasket(Basket &basket, const std::map<int, Product> &productsMap,
     }
     const int totalBudget = uniqueCount + overbuyBudget;
 
-    // std::cout << "[DEBUG] unique=" << uniqueCount << " overbuy=" << overbuyBudget << "\n";
-
     std::unordered_map<std::string, std::vector<const Product *>> byCategory;
     for (auto const &[_, p] : productsMap) {
         byCategory[p.category].push_back(&p);

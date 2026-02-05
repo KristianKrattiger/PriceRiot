@@ -334,6 +334,10 @@ class StoreGraph {
     const Edge &edgeAt(int idx) const {
         return *edges.at(static_cast<size_t>(idx));
     }
+    /** Mutable edge access for shelf inventory updates (e.g. takeOneBySku). */
+    Edge &mutableEdgeAt(int idx) {
+        return *edges.at(static_cast<size_t>(idx));
+    }
     int nodeIndexById(int id) const {
         return nodeIdToIndex.at(id);
     }
@@ -348,6 +352,8 @@ class StoreGraph {
     std::vector<std::pair<int, int>> findEdgesContainingSku(int sku) const;
     /** World (x, z) of cell center; interpolates along edge from node to node. */
     std::pair<double, double> getCellCenter(int edgeIdx, int cellIdx) const;
+    /** (edgeIdx, cellIdx) of the cell whose center is closest to (x,z); (-1,-1) if no cells. */
+    std::pair<int, int> findClosestCell(double x, double z) const;
 
     // Navmesh support
     void buildNavMesh(const StoreLayout &layout);
