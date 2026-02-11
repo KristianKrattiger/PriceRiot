@@ -77,6 +77,20 @@ class NavMeshPathfinder {
                                  PathPoint &outRight);
 
     /**
+     * Fallback when getPortalBetween fails (e.g. inset node no longer shares exact edge).
+     * Uses the edge polygon's boundary segment closest to the node polygon's center.
+     */
+    static bool getFallbackPortalBetween(const NavPolygon &a, const NavPolygon &b,
+                                         PathPoint &outLeft, PathPoint &outRight);
+
+    /**
+     * Generic fallback: use segment of b whose midpoint is closest to a's center.
+     * Ensures we always get a portal for every adjacent pair (e.g. edge-edge).
+     */
+    static bool getGenericFallbackPortal(const NavPolygon &a, const NavPolygon &b,
+                                         PathPoint &outLeft, PathPoint &outRight);
+
+    /**
      * 2D cross product: (b - o) x (c - o). Positive => c left of (o->b).
      */
     static double cross(double ox, double oz, double ax, double az, double bx, double bz);

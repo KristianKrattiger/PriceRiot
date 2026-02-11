@@ -1,6 +1,7 @@
 #include "products.h"
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -8,6 +9,15 @@
 #include <utility>
 
 namespace priceriot {
+
+// #region agent log
+namespace {
+void debugLogProduct(int sku, const std::string& name, const std::string& cat, double price) {
+    std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
+    if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"products.cpp:loadProductsFromCSV\",\"message\":\"Product loaded\",\"data\":{\"sku\":" << sku << ",\"name\":\"" << name << "\",\"category\":\"" << cat << "\",\"price\":" << price << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+}
+}
+// #endregion
 
 // Minimal CSV loader used at construction time.
 // Expected columns (header optional): sku,name,category,price,popularity
@@ -94,6 +104,9 @@ static std::map<int, Product> loadProductsFromCSV_min(const std::string &path) {
         }
 
         out[sku] = Product{sku, name, category, price, popularity};
+        // #region agent log
+        debugLogProduct(sku, name, category, price);
+        // #endregion
     }
 
     return out;

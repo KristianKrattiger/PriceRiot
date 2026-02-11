@@ -1,6 +1,8 @@
 #include "navmesh_pathfinder.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <fstream>
 #include <limits>
 #include <queue>
 #include <unordered_set>
@@ -33,6 +35,9 @@ std::vector<NavMeshPathfinder::PathPoint> NavMeshPathfinder::findPath(const NavM
 
     if (startPolyIdx == goalPolyIdx) {
         // Same polygon, direct path
+        // #region debug log
+        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H3\",\"location\":\"navmesh_pathfinder.cpp:findPath\",\"message\":\"Same polygon direct path\",\"data\":{\"startPolyIdx\":" << startPolyIdx << ",\"goalPolyIdx\":" << goalPolyIdx << ",\"startX\":" << startX << ",\"startZ\":" << startZ << ",\"endX\":" << endX << ",\"endZ\":" << endZ << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+        // #endregion
         return {{startX, startZ}, {endX, endZ}};
     }
 
@@ -127,8 +132,17 @@ std::vector<NavMeshPathfinder::PathPoint> NavMeshPathfinder::findPath(const NavM
     }
     std::reverse(polygonPath.begin(), polygonPath.end());
 
+    // #region debug log
+    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"navmesh_pathfinder.cpp:findPath\",\"message\":\"Polygon path before smooth\",\"data\":{\"polygonPathSize\":" << polygonPath.size() << ",\"startPolyIdx\":" << startPolyIdx << ",\"goalPolyIdx\":" << goalPolyIdx << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+    // #endregion
+
     // Smooth path and convert to waypoints
-    return smoothPath(polygonPath, navmesh, startX, startZ, endX, endZ);
+    std::vector<PathPoint> result = smoothPath(polygonPath, navmesh, startX, startZ, endX, endZ);
+
+    // #region debug log
+    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H1\",\"location\":\"navmesh_pathfinder.cpp:findPath\",\"message\":\"Waypoint count after smooth\",\"data\":{\"waypointCount\":" << result.size() << ",\"polygonPathSize\":" << polygonPath.size() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+    // #endregion
+    return result;
 }
 
 double NavMeshPathfinder::heuristic(const NavPolygon &poly, double targetX, double targetZ) {
@@ -230,10 +244,124 @@ bool NavMeshPathfinder::getPortalBetween(const NavPolygon &a, const NavPolygon &
     return false;
 }
 
+bool NavMeshPathfinder::getFallbackPortalBetween(const NavPolygon &a, const NavPolygon &b,
+                                                 PathPoint &outLeft, PathPoint &outRight) {
+    const bool aIsEdge = a.getAssociatedEdgeId() >= 0;
+    const bool bIsEdge = b.getAssociatedEdgeId() >= 0;
+    const bool aIsNode = a.getAssociatedNodeId() >= 0;
+    const bool bIsNode = b.getAssociatedNodeId() >= 0;
+    if (!((aIsEdge && bIsNode) || (aIsNode && bIsEdge)))
+        return false;
+
+    const NavPolygon &edgePoly = aIsEdge ? a : b;
+    const NavPolygon &nodePoly = aIsEdge ? b : a;
+    auto [nodeCx, nodeCz] = nodePoly.getCenter();
+    auto [edgeCx, edgeCz] = edgePoly.getCenter();
+
+    const auto &ve = edgePoly.getVertices();
+    if (ve.size() < 2)
+        return false;
+
+    size_t bestI = 0;
+    double bestDistSq = std::numeric_limits<double>::max();
+    for (size_t i = 0; i < ve.size(); ++i) {
+        size_t j = (i + 1) % ve.size();
+        double mx = (ve[i].x + ve[j].x) * 0.5;
+        double mz = (ve[i].z + ve[j].z) * 0.5;
+        double dx = nodeCx - mx, dz = nodeCz - mz;
+        double distSq = dx * dx + dz * dz;
+        if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestI = i;
+        }
+    }
+    size_t j = (bestI + 1) % ve.size();
+    double p0x = ve[bestI].x, p0z = ve[bestI].z;
+    double p1x = ve[j].x, p1z = ve[j].z;
+
+    double dx = edgeCx - nodeCx, dz = edgeCz - nodeCz;
+    double perpX = -dz, perpZ = dx;
+    double mx = (p0x + p1x) * 0.5, mz = (p0z + p1z) * 0.5;
+    double d0 = (p0x - mx) * perpX + (p0z - mz) * perpZ;
+    double d1 = (p1x - mx) * perpX + (p1z - mz) * perpZ;
+    if (d0 >= d1) {
+        outLeft.x = p1x;
+        outLeft.z = p1z;
+        outRight.x = p0x;
+        outRight.z = p0z;
+    } else {
+        outLeft.x = p0x;
+        outLeft.z = p0z;
+        outRight.x = p1x;
+        outRight.z = p1z;
+    }
+    return true;
+}
+
+bool NavMeshPathfinder::getGenericFallbackPortal(const NavPolygon &a, const NavPolygon &b,
+                                                 PathPoint &outLeft, PathPoint &outRight) {
+    auto [aCx, aCz] = a.getCenter();
+    auto [bCx, bCz] = b.getCenter();
+    const auto &vb = b.getVertices();
+    if (vb.size() < 2)
+        return false;
+
+    size_t bestI = 0;
+    double bestDistSq = std::numeric_limits<double>::max();
+    for (size_t i = 0; i < vb.size(); ++i) {
+        size_t j = (i + 1) % vb.size();
+        double mx = (vb[i].x + vb[j].x) * 0.5;
+        double mz = (vb[i].z + vb[j].z) * 0.5;
+        double dx = aCx - mx, dz = aCz - mz;
+        double distSq = dx * dx + dz * dz;
+        if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestI = i;
+        }
+    }
+    size_t j = (bestI + 1) % vb.size();
+    double p0x = vb[bestI].x, p0z = vb[bestI].z;
+    double p1x = vb[j].x, p1z = vb[j].z;
+
+    double dx = bCx - aCx, dz = bCz - aCz;
+    double perpX = -dz, perpZ = dx;
+    double mx = (p0x + p1x) * 0.5, mz = (p0z + p1z) * 0.5;
+    double d0 = (p0x - mx) * perpX + (p0z - mz) * perpZ;
+    double d1 = (p1x - mx) * perpX + (p1z - mz) * perpZ;
+    if (d0 >= d1) {
+        outLeft.x = p1x;
+        outLeft.z = p1z;
+        outRight.x = p0x;
+        outRight.z = p0z;
+    } else {
+        outLeft.x = p0x;
+        outLeft.z = p0z;
+        outRight.x = p1x;
+        outRight.z = p1z;
+    }
+    return true;
+}
+
+/**
+ * @brief Refines a polygon-based path into a smoothed point-based path using the Funnel Algorithm.
+ * * This method takes a sequence of navigation mesh polygons and calculates the shortest
+ * geometric path (string-pulling) through the portals shared by those polygons.
+ *
+ * @param polygonPath   A vector of polygon IDs representing the raw path from a search algorithm.
+ * @param navmesh       A reference to the NavMesh containing geometry and connectivity data.
+ * @param startX        The X-coordinate of the starting position.
+ * @param startZ        The Z-coordinate of the starting position.
+ * @param endX          The X-coordinate of the target position.
+ * @param endZ          The Z-coordinate of the target position.
+ * * @return std::vector<PathPoint> A sequence of 2D points representing the smoothed path.
+ * * @note This implementation assumes navigation occurs on the XZ plane.
+ * @see Simple Stupid Funnel Algorithm (SSFA)
+ */
 std::vector<NavMeshPathfinder::PathPoint>
 NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh &navmesh,
                               double startX, double startZ, double endX, double endZ) {
 
+    // Handle trivial case: no polygons in path
     if (polygonPath.empty()) {
         return {{startX, startZ}, {endX, endZ}};
     }
@@ -241,30 +369,80 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
     std::vector<PathPoint> path;
     path.emplace_back(startX, startZ);
 
+    // --- CONFIGURATION: AGENT BUFFER ---
+    // Keep path away from portal edges so waypoints stay clear of shelf obstacles at junctions.
+    // Use a margin larger than collision radius so paths don't cut through perpendicular junctions.
+    const double AGENT_RADIUS = 0.35;
+    const double JUNCTION_MARGIN = 0.15;  // Extra inset at node-edge portals to avoid corner/shelf overlap
+    const double PATH_BUFFER = AGENT_RADIUS + JUNCTION_MARGIN;
+
+    // Step 1: Extract portal boundaries (left and right edges) between polygons
     std::vector<PathPoint> leftBoundary, rightBoundary;
+    int portalsFound = 0;
     for (size_t i = 0; i + 1 < polygonPath.size(); ++i) {
         const NavPolygon &pa = navmesh.getPolygon(polygonPath[i]);
         const NavPolygon &pb = navmesh.getPolygon(polygonPath[i + 1]);
         PathPoint left, right;
-        if (!getPortalBetween(pa, pb, left, right))
+
+        // Find the shared edge between two adjacent polygons (exact match).
+        // If that fails, use node-edge fallback, then generic fallback so we always get a portal.
+        if (!getPortalBetween(pa, pb, left, right) &&
+            !getFallbackPortalBetween(pa, pb, left, right) &&
+            !getGenericFallbackPortal(pa, pb, left, right))
             continue;
+        ++portalsFound;
+        
+        // We artificially narrow the portal so the "string" wraps around a buffer zone
+        // rather than the physical vertex of the wall.
+        double dx = right.x - left.x;
+        double dz = right.z - left.z;
+        double len = std::sqrt(dx * dx + dz * dz);
+
+        // Only modify valid portals
+        if (len > 1e-6) {
+            // Normalize direction vector along the portal edge
+            double ndx = dx / len;
+            double ndz = dz / len;
+
+            // Calculate shrink amount: keep path away from portal edges (junctions / shelf corners).
+            // Use PATH_BUFFER so waypoints stay clear of obstacles at perpendicular junctions.
+            // Clamp to 45% of portal width to avoid crossing in narrow hallways.
+            double shrinkAmount = std::min(PATH_BUFFER, len * 0.45);
+
+            // Move Left point inward (towards Right)
+            left.x += ndx * shrinkAmount;
+            left.z += ndz * shrinkAmount;
+
+            // Move Right point inward (towards Left)
+            right.x -= ndx * shrinkAmount;
+            right.z -= ndz * shrinkAmount;
+        }
+
         leftBoundary.push_back(left);
         rightBoundary.push_back(right);
     }
 
+    // Handle case where no valid portals were found
     if (leftBoundary.empty() || rightBoundary.empty()) {
+        // #region debug log
+        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H2\",\"location\":\"navmesh_pathfinder.cpp:smoothPath\",\"message\":\"No portals found\",\"data\":{\"polygonPathSize\":" << polygonPath.size() << ",\"portalsFound\":" << portalsFound << ",\"leftEmpty\":" << (leftBoundary.empty() ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+        // #endregion
         path.emplace_back(endX, endZ);
         return path;
     }
 
+    // Step 2: Initialize funnel variables
     double apexX = startX, apexZ = startZ;
     size_t leftIdx = 0, rightIdx = 0;
     const size_t numPortals = leftBoundary.size();
 
+    // Step 3: Iterate through portals and tighten the funnel
     for (size_t k = 0; k < numPortals; ++k) {
         const double lx = leftBoundary[k].x, lz = leftBoundary[k].z;
         const double rx = rightBoundary[k].x, rz = rightBoundary[k].z;
 
+        // Tighten the right side of the funnel
+        // If the new right point crosses the left side, the old left point becomes the new apex
         while (rightIdx < k && cross(apexX, apexZ, rightBoundary[rightIdx].x,
                                      rightBoundary[rightIdx].z, rx, rz) < 0.0) {
             path.emplace_back(rightBoundary[rightIdx].x, rightBoundary[rightIdx].z);
@@ -272,6 +450,9 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
             apexZ = rightBoundary[rightIdx].z;
             ++rightIdx;
         }
+
+        // Tighten the left side of the funnel
+        // If the new left point crosses the right side, the old right point becomes the new apex
         while (leftIdx < k && cross(apexX, apexZ, leftBoundary[leftIdx].x, leftBoundary[leftIdx].z,
                                     lx, lz) > 0.0) {
             path.emplace_back(leftBoundary[leftIdx].x, leftBoundary[leftIdx].z);
@@ -281,7 +462,12 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
         }
     }
 
+    // Finalize the path at the destination
     path.emplace_back(endX, endZ);
+
+    // #region debug log
+    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H5\",\"location\":\"navmesh_pathfinder.cpp:smoothPath\",\"message\":\"Smooth path result\",\"data\":{\"pathSize\":" << path.size() << ",\"portalsFound\":" << portalsFound << ",\"numPortals\":" << leftBoundary.size() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+    // #endregion
     return path;
 }
 

@@ -1,23 +1,39 @@
 #include "navmesh_generator.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <map>
 #include <vector>
 
 namespace priceriot {
 
+// Minimum node hub size for navmesh (avoids degenerate polygons when YAML has 0 width/length)
+static constexpr float kNodeMinWidth = 0.5f;
+static constexpr float kNodeMinLength = 0.5f;
+// Inset from each side so node walkable area stays clear of shelf obstacles at junctions
+// CHANGED: Increased from 0.3f to 0.6f to prevent shelf corner overlap
+static constexpr float kNodeInset = 0.6f;
+
 NavMesh NavMeshGenerator::generate(const StoreGraph &graph, const StoreLayout &layout) {
     NavMesh navmesh;
+
+    // Defensive: layout must be built from same graph before buildNavMesh(layout)
+    const auto &nodes = graph.getNodes();
+    if (layout.nodeGeoms.empty() && !nodes.empty()) {
+        std::cerr << "NavMeshGenerator: warning - layout.nodeGeoms is empty but graph has "
+                  << nodes.size() << " nodes. Call layout.buildGeometry(store) before buildNavMesh.\n";
+    }
 
     // Maps: nodeId -> polygon index, edgeId -> polygon indices
     std::map<int, int> nodePolygonMap;
     std::map<int, std::vector<int>> edgePolygonMap;
 
     // Step 1: Generate polygons for all nodes
-    const auto &nodes = graph.getNodes();
+    int nodesWithGeom = 0;
     for (const auto &node : nodes) {
         int nodeId = node->getNodeId();
         if (layout.nodeGeoms.count(nodeId)) {
+            ++nodesWithGeom;
             generateNodePolygons(*node, layout.nodeGeoms.at(nodeId), navmesh, nodePolygonMap);
         }
     }
@@ -34,18 +50,41 @@ NavMesh NavMeshGenerator::generate(const StoreGraph &graph, const StoreLayout &l
     // Step 3: Connect node polygons to edge polygons
     connectNodeEdgePolygons(graph, nodePolygonMap, edgePolygonMap, navmesh);
 
+    // Diagnostic: log node polygon count when layout was incomplete
+    if (nodesWithGeom < static_cast<int>(nodes.size()) && !nodes.empty()) {
+        std::cerr << "NavMeshGenerator: " << nodesWithGeom << "/" << nodes.size()
+                  << " nodes had layout geometry; " << nodePolygonMap.size()
+                  << " node polygons created.\n";
+    }
+
     return navmesh;
 }
 
 void NavMeshGenerator::generateNodePolygons(const Node &node, const NodeGeometry &geom,
                                             NavMesh &navmesh, std::map<int, int> &nodePolygonMap) {
-    // Get corners of the node hub
-    auto corners = geom.getCorners();
+    // Use minimum size so node polygon is non-degenerate and visible (avoids zero width/length)
+    NodeGeometry geomClamped = geom;
+    geomClamped.width = std::max(geom.width, kNodeMinWidth);
+    geomClamped.length = std::max(geom.length, kNodeMinLength);
 
-    // Convert to NavPolygon vertices
+    // Inset hub toward center so walkable node area stays clear of shelf obstacles at junctions.
+    // Keep half-sizes at least kNodeMin* so the polygon remains valid and portals still overlap.
+    float halfW = geomClamped.width / 2.f;
+    float halfL = geomClamped.length / 2.f;
+    halfW = std::max(kNodeMinWidth / 2.f, halfW - kNodeInset);
+    halfL = std::max(kNodeMinLength / 2.f, halfL - kNodeInset);
+
+    // Build inset rectangle corners (same order as NodeGeometry::getCorners: TL, TR, BR, BL)
+    std::vector<std::pair<float, float>> corners = {
+        {geomClamped.x - halfW, geomClamped.z - halfL},
+        {geomClamped.x + halfW, geomClamped.z - halfL},
+        {geomClamped.x + halfW, geomClamped.z + halfL},
+        {geomClamped.x - halfW, geomClamped.z + halfL},
+    };
+
     std::vector<NavPolygon::Vertex> vertices;
-    for (const auto &corner : corners) {
-        vertices.emplace_back(static_cast<double>(corner.x), static_cast<double>(corner.y));
+    for (const auto &c : corners) {
+        vertices.emplace_back(static_cast<double>(c.first), static_cast<double>(c.second));
     }
 
     // Create polygon
@@ -113,10 +152,12 @@ void NavMeshGenerator::connectNodeEdgePolygons(
         }
 
         // Connect edge polygons to each other (for multi-segment edges)
-        const auto &edgePolys = edgePolygonMap.at(edgeId);
-        for (size_t i = 0; i < edgePolys.size(); ++i) {
-            for (size_t j = i + 1; j < edgePolys.size(); ++j) {
-                navmesh.connectPolygons(edgePolys[i], edgePolys[j]);
+        if (edgePolygonMap.count(edgeId)) {
+            const auto &edgePolys = edgePolygonMap.at(edgeId);
+            for (size_t i = 0; i < edgePolys.size(); ++i) {
+                for (size_t j = i + 1; j < edgePolys.size(); ++j) {
+                    navmesh.connectPolygons(edgePolys[i], edgePolys[j]);
+                }
             }
         }
     }

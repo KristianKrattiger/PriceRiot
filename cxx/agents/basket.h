@@ -24,6 +24,7 @@ class Basket {
 
     [[nodiscard]] int getSize() const;
     [[nodiscard]] double getTotal() const;
+    [[nodiscard]] const std::vector<Product>& getProducts() const { return products_; }
 
     // Note: 'getQuantity' and 'recalcTotal' removed to match provided .cpp implementation
 

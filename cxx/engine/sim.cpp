@@ -272,7 +272,7 @@ int main() {
     // --- Section: Main simulation loop ---
     sf::Clock deltaClock;
     float spawnTimer = 0.0f;
-    float spawnInterval = 10.0f;
+    float spawnInterval = 20.0f;
     float timeScale = 1.0f;
     bool isPaused = true;
     bool showStoreLabels = false;
@@ -308,6 +308,17 @@ int main() {
     static constexpr size_t GUI_BEHAVIOR_LOG_MAX = 100;
     std::deque<GuiBehaviorEntry> guiBehaviorLog;
     bool showGuiBehaviorLogAll = false;
+
+    // Mission checkout log: tracks mission vs actual purchases at checkout
+    struct MissionCheckoutEntry {
+        double simTime;
+        int customerId;
+        std::vector<std::string> missionItems;  // Product names from mission
+        std::vector<std::string> basketItems;   // Product names from basket
+        double basketTotal;
+    };
+    static constexpr size_t MISSION_LOG_MAX = 50;
+    std::deque<MissionCheckoutEntry> missionCheckoutLog;
 
     while (window.isOpen()) {
         sf::Event event{};
@@ -453,6 +464,37 @@ int main() {
                                     static_cast<std::uint32_t>(sku));
                             }
                         }
+                    }
+                }
+
+                // When MissionBehavior customer checks out, log mission vs basket
+                if (agent->cust->getLastDecisionType() == static_cast<int>(Decision::DecisionType::Checkout)) {
+                    const auto *missionSkus = agent->cust->getBehavior() 
+                        ? agent->cust->getBehavior()->getMissionSkus() 
+                        : nullptr;
+                    if (missionSkus && !missionSkus->empty()) {
+                        MissionCheckoutEntry entry;
+                        entry.simTime = simTimeAccum;
+                        entry.customerId = agent->cust->getId();
+                        entry.basketTotal = agent->basket.getTotal();
+                        
+                        // Convert mission SKUs to product names
+                        for (int sku : *missionSkus) {
+                            if (store.catalog.productExists(sku)) {
+                                entry.missionItems.push_back(store.catalog.getProduct(sku).name);
+                            } else {
+                                entry.missionItems.push_back("SKU#" + std::to_string(sku));
+                            }
+                        }
+                        
+                        // Get basket item names
+                        for (const auto &product : agent->basket.getProducts()) {
+                            entry.basketItems.push_back(product.name);
+                        }
+                        
+                        missionCheckoutLog.push_back(entry);
+                        while (missionCheckoutLog.size() > MISSION_LOG_MAX)
+                            missionCheckoutLog.pop_front();
                     }
                 }
             }
@@ -612,7 +654,18 @@ int main() {
         ImGui::Begin("Simulation Control");
         ImGui::Text("Nodes: %d  Edges: %d", store.numNodes(), store.numEdges());
         if (store.hasNavMesh()) {
-            ImGui::Text("Navmesh: %d polygons", store.getNavMesh().getPolygonCount());
+            const NavMesh &nm = store.getNavMesh();
+            int totalPolys = nm.getPolygonCount();
+            int nodePolys = 0;
+            int edgePolys = 0;
+            for (int i = 0; i < totalPolys; ++i) {
+                const NavPolygon &p = nm.getPolygon(i);
+                if (p.getAssociatedNodeId() >= 0)
+                    ++nodePolys;
+                if (p.getAssociatedEdgeId() >= 0)
+                    ++edgePolys;
+            }
+            ImGui::Text("Navmesh: %d polygons (%d node, %d edge)", totalPolys, nodePolys, edgePolys);
 
             ImGui::Separator();
             ImGui::Text("Navmesh Visualization:");
@@ -760,6 +813,42 @@ int main() {
         }
         ImGui::End();
 
+        // --- ImGui Mission Checkout Log panel ---
+        ImGui::Begin("Mission Checkout Log");
+        ImGui::Text("Tracks mission vs actual purchases at checkout (Mission customers only)");
+        ImGui::Separator();
+        if (missionCheckoutLog.empty()) {
+            ImGui::TextDisabled("No checkouts yet...");
+        } else {
+            ImGui::BeginChild("MissionLogScroll", ImVec2(0, 200), true);
+            // Show most recent first
+            for (auto it = missionCheckoutLog.rbegin(); it != missionCheckoutLog.rend(); ++it) {
+                const auto &entry = *it;
+                ImGui::Text("Customer #%d @ %.1fs", entry.customerId, entry.simTime);
+                
+                // Build mission items string
+                std::string missionStr;
+                for (size_t i = 0; i < entry.missionItems.size(); ++i) {
+                    if (i > 0) missionStr += ", ";
+                    missionStr += entry.missionItems[i];
+                }
+                ImGui::Text("  Mission: %s", missionStr.c_str());
+                
+                // Build basket items string
+                std::string basketStr;
+                for (size_t i = 0; i < entry.basketItems.size(); ++i) {
+                    if (i > 0) basketStr += ", ";
+                    basketStr += entry.basketItems[i];
+                }
+                ImGui::Text("  Basket: %s", basketStr.c_str());
+                ImGui::Text("  Total: $%.2f", entry.basketTotal);
+                ImGui::Separator();
+            }
+            ImGui::EndChild();
+        }
+        ImGui::Text("Entries: %zu / %zu", missionCheckoutLog.size(), MISSION_LOG_MAX);
+        ImGui::End();
+
         window.clear(sf::Color(30, 30, 40));
 
         // --- Render: store layout, navmesh, physics, agents ---
@@ -769,30 +858,7 @@ int main() {
             drawStoreLabels(window, layout, store, debugFont, showStoreLabels, PIXELS_PER_METER,
                             dynamicOffsetX, dynamicOffsetY);
 
-        // Draw navmesh visualization (overlay layer)
-        if (store.hasNavMesh()) {
-            const NavMesh &navmesh = store.getNavMesh();
-
-            // Draw polygons
-            navmeshVisualizer.drawPolygons(window, navmesh);
-
-            // Draw connections
-            navmeshVisualizer.drawConnections(window, navmesh);
-
-            // Draw polygon centers
-            navmeshVisualizer.drawCenters(window, navmesh);
-
-            // Draw agent paths
-            if (navmeshVisualizer.showPaths) {
-                for (const auto &agent : agents) {
-                    if (agent->cust->isUsingNavmesh() && !agent->cust->getNavmeshPath().empty()) {
-                        navmeshVisualizer.drawPath(window, agent->cust->getNavmeshPath());
-                    }
-                }
-            }
-        }
-
-        // Draw physics world obstacles (for debugging)
+        // Draw physics world obstacles before navmesh so navmesh overlay stays on top (node polygons visible)
         if (store.hasPhysicsWorld()) {
             const PhysicsWorld &physics = store.getPhysicsWorld();
 
@@ -830,6 +896,29 @@ int main() {
                     static_cast<float>(boundary.minX * PIXELS_PER_METER + dynamicOffsetX),
                     static_cast<float>(boundary.minZ * PIXELS_PER_METER + dynamicOffsetY));
                 window.draw(boundaryShape);
+            }
+        }
+
+        // Draw navmesh visualization (overlay layer, after physics so junctions are not covered)
+        if (store.hasNavMesh()) {
+            const NavMesh &navmesh = store.getNavMesh();
+
+            // Draw polygons
+            navmeshVisualizer.drawPolygons(window, navmesh);
+
+            // Draw connections
+            navmeshVisualizer.drawConnections(window, navmesh);
+
+            // Draw polygon centers
+            navmeshVisualizer.drawCenters(window, navmesh);
+
+            // Draw agent paths
+            if (navmeshVisualizer.showPaths) {
+                for (const auto &agent : agents) {
+                    if (agent->cust->isUsingNavmesh() && !agent->cust->getNavmeshPath().empty()) {
+                        navmeshVisualizer.drawPath(window, agent->cust->getNavmeshPath());
+                    }
+                }
             }
         }
 

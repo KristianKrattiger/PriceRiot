@@ -44,6 +44,8 @@ class ICustomerBehavior {
     virtual const char *getStateName() const { return "Unknown"; }
     /** Behavior type label for UI/log (e.g. "Default", "Mission"). */
     virtual const char *getBehaviorType() const { return "Unknown"; }
+    /** Get mission SKU list (for MissionBehavior), nullptr for non-mission behaviors. */
+    virtual const std::vector<int>* getMissionSkus() const { return nullptr; }
 };
 
 /** Browsing behavior: prefers aisles, impulsivity-scaled picks, state machine through store. */
@@ -77,6 +79,8 @@ class MissionBehavior : public ICustomerBehavior {
     Decision decide(Customer &c, const ICustomerBehaviorContext &ctx) override;
     const char *getStateName() const override;
     const char *getBehaviorType() const override { return "Mission"; }
+    /** Get the list of SKU IDs this customer intends to buy. */
+    const std::vector<int>* getMissionSkus() const override { return &missionSkus; }
 
   private:
     mutable State state = Entering;

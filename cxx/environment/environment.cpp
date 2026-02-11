@@ -49,9 +49,20 @@ static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
                                                bool skipDefaultPlanogram) {
     using namespace priceriot;
     ShelfSide left{}, right{};
+    // #region agent log
+    static bool firstLog = true;
+    if (firstLog) {
+        AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
+        if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"environment.cpp:attach_inventory\",\"message\":\"Planogram loading started\",\"data\":{\"hasRoot\":true},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        firstLog = false;
+    }
+    // #endregion
     if (auto pog = planRoot["planogram"]) {
         if (auto edgesY = pog["edges"]) {
             if (auto edgeY = edgesY[std::to_string(edgeId)]) {
+                // #region agent log
+                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"environment.cpp:planogram_found\",\"message\":\"Found planogram for edge\",\"data\":{\"edgeId\":" << edgeId << ",\"cellIndex\":" << cellIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+                // #endregion
                 if (auto cellsY = edgeY["cells"]) {
                     if (cellIndex >= 0 && cellIndex < static_cast<int>(cellsY.size())) {
                         const auto &cellY = cellsY[cellIndex];
@@ -72,6 +83,10 @@ static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
                 cell.set_left_inventory(left);
                 cell.set_right_inventory(right);
                 return;
+            } else {
+                // #region agent log
+                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"environment.cpp:planogram_not_found\",\"message\":\"No planogram for edge - using fallback\",\"data\":{\"edgeId\":" << edgeId << ",\"cellIndex\":" << cellIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+                // #endregion
             }
         }
     }

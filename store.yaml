@@ -276,7 +276,7 @@ edges:
     shelf_right: 0.4
 
 # Full planogram: per-edge layout. Edges 1 (Entrance->Junction) and 4 (Register->Exit) have no
-# products; aisle edges 2,3,5,6,7,8,9,10 use edge-level left_side/right_side for all cells.
+# products; aisle edges 2,3,5,6,7,8,9,10 have diverse products across categories.
 planogram:
   edges:
     "1":  # Entrance corridor - no products
@@ -285,30 +285,30 @@ planogram:
     "4":  # Register->Exit - no products
       left_side: { bay_count: 0 }
       right_side: { bay_count: 0 }
-    "2":
+    "2":  # Main aisle - Electronics
       left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
       right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
-    "3":
-      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
-      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
-    "5":
-      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
-      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
-    "6":
-      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
-      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
-    "7":
-      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
-      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
-    "8":
-      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
-      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
-    "9":
-      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
-      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
-    "10":
-      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 1, on_shelf_qty: 10 }] }
-      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 2, on_shelf_qty: 10 }] }
+    "3":  # Main aisle - Appliances
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 3, on_shelf_qty: 10 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 4, on_shelf_qty: 10 }] }
+    "5":  # Side aisle - Books
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 5, on_shelf_qty: 15 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 6, on_shelf_qty: 15 }] }
+    "6":  # Side aisle - Clothing
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 7, on_shelf_qty: 20 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 8, on_shelf_qty: 20 }] }
+    "7":  # Side aisle - Toys
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 9, on_shelf_qty: 15 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 10, on_shelf_qty: 15 }] }
+    "8":  # Return aisle - Books (duplicate for more variety)
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 5, on_shelf_qty: 15 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 6, on_shelf_qty: 15 }] }
+    "9":  # Return aisle - Clothing (duplicate for more variety)
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 7, on_shelf_qty: 20 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 8, on_shelf_qty: 20 }] }
+    "10":  # Return aisle - Toys (duplicate for more variety)
+      left_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 9, on_shelf_qty: 15 }] }
+      right_side: { bay_count: 1, planogram: [{ bay: 0, face: 0, slot: 0, sku: 10, on_shelf_qty: 15 }] }
 
 # Fallback for any edge not listed in planogram.edges (kept for compatibility)
 left_side:

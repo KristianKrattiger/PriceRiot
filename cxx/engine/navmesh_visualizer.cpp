@@ -31,22 +31,24 @@ void NavMeshVisualizer::drawPolygons(sf::RenderWindow &window, const NavMesh &na
             shape.setPoint(j, screenPos);
         }
 
-        // Color based on whether it's associated with a node or edge
+        // Color and outline based on whether it's associated with a node or edge
         if (polygon.getAssociatedNodeId() >= 0) {
             shape.setFillColor(nodePolygonColor);
             shape.setOutlineColor(
                 sf::Color(nodePolygonColor.r, nodePolygonColor.g, nodePolygonColor.b, 255));
+            shape.setOutlineThickness(2.0f); // Thicker outline so node/junction polygons stand out
         } else if (polygon.getAssociatedEdgeId() >= 0) {
             shape.setFillColor(edgePolygonColor);
             shape.setOutlineColor(
                 sf::Color(edgePolygonColor.r, edgePolygonColor.g, edgePolygonColor.b, 255));
+            shape.setOutlineThickness(1.0f);
         } else {
             // Default color for unassociated polygons
             shape.setFillColor(sf::Color(200, 200, 200, 100));
             shape.setOutlineColor(sf::Color(200, 200, 200, 255));
+            shape.setOutlineThickness(1.0f);
         }
 
-        shape.setOutlineThickness(1.0f);
         window.draw(shape);
     }
 }

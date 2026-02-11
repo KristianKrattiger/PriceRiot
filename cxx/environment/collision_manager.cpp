@@ -1,7 +1,9 @@
 #include "collision_manager.h"
 #include "../agents/customer.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <fstream>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -41,7 +43,22 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
     double agentX = agent->getPosX();
     double agentZ = agent->getPosZ();
 
-    // Check collisions with other agents
+    // Resolve obstacle collisions first so agent-agent separation never pushes into shelves.
+    // (Previously agent-agent ran first and could push an agent into an obstacle.)
+    if (physicsWorld) {
+        Circle agentCircle(agentX, agentZ, radius);
+        if (physicsWorld->checkCollision(agentCircle)) {
+            physicsWorld->resolveCollision(agentCircle);
+            // #region debug log
+            { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H2\",\"location\":\"collision_manager.cpp:obstacle_push\",\"message\":\"Agent pushed out of obstacle\",\"data\":{\"customerId\":" << agent->getId() << ",\"posBeforeX\":" << agentX << ",\"posBeforeZ\":" << agentZ << ",\"posAfterX\":" << agentCircle.x << ",\"posAfterZ\":" << agentCircle.z << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            // #endregion
+            agent->setPosition(agentCircle.x, agentCircle.z);
+            agentX = agentCircle.x;
+            agentZ = agentCircle.z;
+        }
+    }
+
+    // Check collisions with other agents (using position after obstacle resolve)
     for (const auto &other : registeredAgents) {
         if (other.agent == agent)
             continue;
@@ -70,19 +87,40 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
                 double nx = dx / dist;
                 double nz = dz / dist;
 
-                // Push both agents apart (equal and opposite)
+                // Push both agents apart, but clamp so neither ends up inside an obstacle.
                 double pushAmount = overlap / 2.0;
+                if (physicsWorld) {
+                    double lo = 0.0, hi = pushAmount;
+                    for (int iter = 0; iter < 16; ++iter) {
+                        double mid = (lo + hi) * 0.5;
+                        double newAx = agentX + nx * mid, newAz = agentZ + nz * mid;
+                        double newOx = otherX - nx * mid, newOz = otherZ - nz * mid;
+                        bool aOk = physicsWorld->isValidPosition(newAx, newAz, radius);
+                        bool oOk = physicsWorld->isValidPosition(newOx, newOz, other.radius);
+                        if (aOk && oOk)
+                            lo = mid;
+                        else
+                            hi = mid;
+                    }
+                    pushAmount = lo;
+                }
                 agent->setPosition(agentX + nx * pushAmount, agentZ + nz * pushAmount);
                 other.agent->setPosition(otherX - nx * pushAmount, otherZ - nz * pushAmount);
             }
         }
     }
 
-    // Check collisions with obstacles
+    // After agent-agent separation, current agent may have been pushed into an obstacle.
+    // Resolve again so we never end the frame inside a shelf.
     if (physicsWorld) {
+        agentX = agent->getPosX();
+        agentZ = agent->getPosZ();
         Circle agentCircle(agentX, agentZ, radius);
         if (physicsWorld->checkCollision(agentCircle)) {
             physicsWorld->resolveCollision(agentCircle);
+            // #region debug log
+            { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H2\",\"location\":\"collision_manager.cpp:obstacle_push_after_agent\",\"message\":\"Agent pushed out of obstacle after agent-agent\",\"data\":{\"customerId\":" << agent->getId() << ",\"posBeforeX\":" << agentX << ",\"posBeforeZ\":" << agentZ << ",\"posAfterX\":" << agentCircle.x << ",\"posAfterZ\":" << agentCircle.z << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            // #endregion
             agent->setPosition(agentCircle.x, agentCircle.z);
         }
     }
