@@ -81,6 +81,7 @@ set(COMMON_SOURCES
 # Conditionally add MinGW _setjmp workaround
 set(SIMULATOR_SOURCES
         engine/sim.cpp
+        engine/simulator.cpp
         ${COMMON_SOURCES}
 )
 

@@ -1,3 +1,15 @@
+Metadata-Version: 2.4
+Name: priceriot-analytics
+Version: 0.1.0
+Summary: Analytics helpers and notebooks for the PriceRiot retail simulation engine.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pandas
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: matplotlib; extra == "dev"
+Requires-Dist: seaborn; extra == "dev"
+
 # PriceRiot
 
 **PriceRiot** is a high-fidelity retail store simulation engine built in C++ with real-time visualisation and a Python analytics layer. It simulates autonomous customer agents moving through a YAML‑defined store layout, interacting with shelves, building baskets, and generating transaction data for downstream analysis.

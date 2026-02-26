@@ -1,0 +1,109 @@
+products_file: data/raw/products.csv
+nodes:
+  - id: 1
+    type: Entrance
+    x: 0.0
+    z: 0.0
+    length: 4.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 1.0
+    exit_rate: 0.0
+
+  - id: 2
+    type: Register
+    x: 8.0
+    z: 0.0
+    length: 4.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 5.0
+    service_rate: 0.5
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 3
+    type: Exit
+    x: 14.0
+    z: 0.0
+    length: 4.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 1.0
+
+edges:
+  - id: 1
+    from: 1
+    to: 2
+    length: 8.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.5
+    shelf_right: 0.5
+
+  - id: 2
+    from: 2
+    to: 3
+    length: 6.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+planogram:
+  edges:
+    "1":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 1
+            on_shelf_qty: 20
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 2
+            on_shelf_qty: 20
+
+checkout_queues:
+  - register_id: 2
+    processing_time: 5.0
+    waypoints:
+      - { x: 8.0, z: 0.0 }
+      - { x: 6.5, z: 0.0 }
+      - { x: 5.0, z: 0.0 }
+
+

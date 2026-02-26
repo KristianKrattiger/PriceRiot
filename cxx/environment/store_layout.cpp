@@ -7,8 +7,8 @@ namespace priceriot {
 // Ray-Box Intersection Helper (2D Top Down X, Z)
 // Box centered at Cx, Cz with half-extents Hx, Hz
 // Ray Origin Ox, Oz, Direction Dx, Dz
-static sf::Vector2f intersectRayBox(float Ox, float Oz, float Dx, float Dz, float Cx, float Cz,
-                                    float Hx, float Hz) {
+static Vec2f intersectRayBox(float Ox, float Oz, float Dx, float Dz, float Cx, float Cz,
+                            float Hx, float Hz) {
     // We want the point where the ray *leaves* the box.
     // Simple slab method
     // In our case, the Ray Origin is the center of the box (Cx, Cz).
@@ -26,10 +26,10 @@ static sf::Vector2f intersectRayBox(float Ox, float Oz, float Dx, float Dz, floa
     // The ray hits the nearest boundary
     float t = std::min(t_x, t_z);
 
-    return sf::Vector2f(Cx + Dx * t, Cz + Dz * t);
+    return Vec2f(Cx + Dx * t, Cz + Dz * t);
 }
 
-std::vector<sf::Vector2f> NodeGeometry::getCorners() const {
+std::vector<Vec2f> NodeGeometry::getCorners() const {
     float hw = width / 2.0f;
     float hl = length / 2.0f;
     return {
@@ -40,7 +40,7 @@ std::vector<sf::Vector2f> NodeGeometry::getCorners() const {
     };
 }
 
-std::vector<sf::Vector2f> EdgeGeometry::getCorners() const {
+std::vector<Vec2f> EdgeGeometry::getCorners() const {
     float hw = width / 2.0f;
     float dx = std::cos(angle + 1.5708f) * hw; // 90 deg rotation
     float dz = std::sin(angle + 1.5708f) * hw;
@@ -84,12 +84,12 @@ void StoreLayout::buildGeometry(const StoreGraph &graph) {
 
         // Calculate exit points from the Node Hubs
         // Start Point: From Center U towards V, clipped to U's box
-        sf::Vector2f pStart =
+        Vec2f pStart =
             intersectRayBox(nU.x, nU.z, dirX, dirZ, nU.x, nU.z, nU.width / 2.0f, nU.length / 2.0f);
 
         // End Point: From Center V towards U (Reverse dir), clipped to V's box
-        sf::Vector2f pEnd = intersectRayBox(nV.x, nV.z, -dirX, -dirZ, nV.x, nV.z, nV.width / 2.0f,
-                                            nV.length / 2.0f);
+        Vec2f pEnd = intersectRayBox(nV.x, nV.z, -dirX, -dirZ, nV.x, nV.z, nV.width / 2.0f,
+                                     nV.length / 2.0f);
 
         EdgeGeometry eg;
         eg.startX = pStart.x;

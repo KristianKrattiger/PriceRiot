@@ -1147,8 +1147,30 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
     if (state == MissionBrowse && missionIndex < missionSkus.size()) {
         int sku = missionSkus[missionIndex];
         auto loci = ctx.store.findEdgesContainingSku(sku);
+
+        // Filter out cells whose center is too close to a Junction or Entrance node.
+        // getCellCenter interpolates between node *centers*, so cell 0 of an edge can
+        // sit right on top of a junction hub — causing agents to stop at junctions to pick.
+        // 1.5m radius (2.25 = 1.5^2) keeps picks inside the aisle body.
+        loci.erase(
+            std::remove_if(loci.begin(), loci.end(),
+                [&](const std::pair<int,int> &loc) {
+                    auto [cx, cz] = ctx.store.getCellCenter(loc.first, loc.second);
+                    for (int n = 0; n < ctx.store.numNodes(); ++n) {
+                        const auto &nd = ctx.store.nodeAt(n);
+                        auto t = nd.getNodeType();
+                        if (t == Node::NodeType::Junction || t == Node::NodeType::Entrance) {
+                            double ddx = cx - nd.getX(), ddz = cz - nd.getZ();
+                            if (ddx * ddx + ddz * ddz < 2.25) // 1.5m
+                                return true;
+                        }
+                    }
+                    return false;
+                }),
+            loci.end());
+
         if (loci.empty()) {
-            ++missionIndex; /* skip */
+            ++missionIndex; /* skip — no valid stall away from junctions */
         } else {
             static std::mt19937 rngMb(std::random_device{}());
             size_t idx = static_cast<size_t>(rngMb()) % loci.size();

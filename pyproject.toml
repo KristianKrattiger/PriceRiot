@@ -1,0 +1,21 @@
+ [build-system]
+ requires = ["setuptools>=61"]
+ build-backend = "setuptools.build_meta"
+
+ [project]
+ name = "priceriot-analytics"
+ version = "0.1.0"
+ description = "Analytics helpers and notebooks for the PriceRiot retail simulation engine."
+ readme = "README.md"
+ requires-python = ">=3.10"
+ dependencies = ["pandas"]
+
+ [project.optional-dependencies]
+ dev = ["pytest", "matplotlib", "seaborn"]
+
+ [tool.setuptools]
+ package-dir = {"" = "python"}
+
+ [tool.setuptools.packages.find]
+ where = ["python"]
+

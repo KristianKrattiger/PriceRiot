@@ -21,6 +21,7 @@
 #include <utility>
 #include <yaml-cpp/yaml.h>
 #include <type_traits>
+#include <chrono>
 
 // --- Helper Functions ---
 template <class T> static size_t safe_size(const T *ptr) {
@@ -33,7 +34,7 @@ static inline std::string or_empty(const YAML::Node &n, const char *key) {
 }
 
 namespace {
-constexpr bool kAgentLogEnabled = false;
+constexpr bool kAgentLogEnabled = true;
 struct NullLogStream {
     NullLogStream(const char *, std::ios_base::openmode) {}
     explicit operator bool() const { return false; }
@@ -342,6 +343,51 @@ void StoreGraph::loadFromYaml(const std::string &path) {
             priceriot::EdgeCell cell(E.getEdgeId() * 1000 + c, cellLength_m, personalRadius_m);
             attach_inventory_to_cell_from_yaml(root, this->catalog, cell, onShelfQuantitySum,
                                                E.getEdgeId(), c, skipDefaultPlanogram);
+
+            // #region agent log
+            if ((E.getShelfLeft() > 0.0 || E.getShelfRight() > 0.0) && c == 0) {
+                int leftBays = cell.get_left().bay_count;
+                int rightBays = cell.get_right().bay_count;
+                int leftQty = 0;
+                int rightQty = 0;
+                for (std::uint8_t b = 0; b < cell.get_left().bay_count; ++b) {
+                    const auto &bay = cell.get_left().bays[b];
+                    for (std::uint8_t f = 0; f < bay.face_count; ++f) {
+                        const auto &face = bay.faces[f];
+                        for (std::uint8_t sl = 0; sl < face.slot_count; ++sl) {
+                            leftQty += face.slots[sl].qty_on_face;
+                        }
+                    }
+                }
+                for (std::uint8_t b = 0; b < cell.get_right().bay_count; ++b) {
+                    const auto &bay = cell.get_right().bays[b];
+                    for (std::uint8_t f = 0; f < bay.face_count; ++f) {
+                        const auto &face = bay.faces[f];
+                        for (std::uint8_t sl = 0; sl < face.slot_count; ++sl) {
+                            rightQty += face.slots[sl].qty_on_face;
+                        }
+                    }
+                }
+                AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
+                if (lf) {
+                    lf << "{\"hypothesisId\":\"SHELF\",\"location\":\"environment.cpp:edge_inventory\","
+                          "\"message\":\"Edge inventory summary (first cell)\","
+                          "\"data\":{\"edgeId\":" << E.getEdgeId()
+                       << ",\"cellIndex\":" << c
+                       << ",\"cellCount\":" << nCells
+                       << ",\"leftBays\":" << leftBays
+                       << ",\"rightBays\":" << rightBays
+                       << ",\"leftQty\":" << leftQty
+                       << ",\"rightQty\":" << rightQty
+                       << "},\"timestamp\":"
+                       << std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::system_clock::now().time_since_epoch())
+                              .count()
+                       << "}\n";
+                }
+            }
+            // #endregion
+
             E.cells.push_back(std::move(cell));
         }
     }
@@ -424,11 +470,14 @@ std::pair<double, double> StoreGraph::getStallPosition(int edgeIdx, int cellIdx,
     double perpX = leftSide ? -dz : dz;
     double perpZ = leftSide ? dx : -dx;
 
-    // Offset from centerline toward the shelf side, but stay inside walkable area
-    // clearAisleWidth is the walkable width; position at edge minus personal radius
-    double clearWidth = edge.getClearWidth();
+    // Offset from centerline toward the shelf side.
+    // Each side's correct offset is: halfWidth - thatSide'sProtrusion - personalRadius.
+    // Using the average clearWidth/2 would be wrong when shelf protrusions are asymmetric.
     double personalRadius = edge.getPersonalRadius();
-    double offset = (clearWidth / 2.0) - personalRadius;
+    double halfWidth = edge.getWidth() / 2.0;
+    double offset = leftSide
+        ? halfWidth - edge.getShelfLeft()  - personalRadius
+        : halfWidth - edge.getShelfRight() - personalRadius;
     if (offset < 0.1)
         offset = 0.1; // Minimum offset to avoid centerline overlap
 

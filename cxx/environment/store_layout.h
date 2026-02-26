@@ -10,7 +10,17 @@
 #define STORE_LAYOUT_H
 
 #include "environment.h"
+#if defined(PRICERIOT_HEADLESS)
+struct Vec2f {
+    float x{0.f};
+    float y{0.f};
+    Vec2f() = default;
+    Vec2f(float x_, float y_) : x(x_), y(y_) {}
+};
+#else
 #include <SFML/System/Vector2.hpp>
+using Vec2f = sf::Vector2f;
+#endif
 #include <map>
 #include <vector>
 
@@ -22,7 +32,7 @@ struct NodeGeometry {
 
     // Helper to get global corners (for debugging/rendering)
     // Returns {TopLeft, TopRight, BottomRight, BottomLeft} in X/Z
-    std::vector<sf::Vector2f> getCorners() const;
+    std::vector<Vec2f> getCorners() const;
 };
 
 struct EdgeGeometry {
@@ -36,7 +46,7 @@ struct EdgeGeometry {
     float angle; // Radians, from Start to End
 
     // Helper to get corners of the full aisle rectangle
-    std::vector<sf::Vector2f> getCorners() const;
+    std::vector<Vec2f> getCorners() const;
 };
 
 class StoreLayout {

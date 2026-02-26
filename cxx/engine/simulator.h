@@ -1,0 +1,236 @@
+/**
+ * @file simulator.h
+ * @brief Headless simulation core: Simulator class and Agent struct.
+ *
+ * Extracts all simulation state and logic from the monolithic sim.cpp/runSim(),
+ * so the engine can be driven either by the SFML visualiser (sim.cpp) or by
+ * Python via pybind11 (priceriot_bindings.cpp) without any SFML dependency.
+ *
+ * Usage (headless / Python):
+ *   Simulator sim("store.yaml");
+ *   sim.run(3600.0);                        // blocking headless run
+ *   auto txns = sim.getTransactions();
+ *
+ * Usage (visualiser):
+ *   Simulator sim("store.yaml");
+ *   // each SFML frame:
+ *   sim.step(dt);
+ *   // then render via sim.getAgents(), sim.getStore(), sim.getLayout() …
+ */
+#pragma once
+#ifndef SIMULATOR_H
+#define SIMULATOR_H
+
+#include "../agents/basket.h"
+#include "../agents/customer.h"
+#include "../agents/customer_behavior.h"
+#include "../environment/checkout_queue.h"
+#include "../environment/collision_manager.h"
+#include "../environment/environment.h"
+#include "../environment/products.h"
+#include "../environment/store_layout.h"
+#include "transaction.h"
+
+#include <cstdint>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <random>
+#include <string>
+#include <vector>
+
+namespace priceriot {
+
+/** Snapshot of a mission customer at checkout (captured before basket is cleared). */
+struct MissionCheckoutSnapshot {
+    float simTime = 0.0f;
+    int customerId = -1;
+    std::vector<std::string> missionItems;
+    std::vector<std::string> basketItems;
+    double basketTotal = 0.0;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent
+// Customer + Basket pair that lives for one store visit.
+// Moved here from the anonymous scope in sim.cpp so both the visualiser and
+// the headless Simulator can share the same definition.
+// ─────────────────────────────────────────────────────────────────────────────
+struct Agent {
+    std::shared_ptr<Customer> cust;
+    Basket basket;
+    bool hasPaid = false;
+
+    /**
+     * @param missionProbability Probability in [0,1] that a browsing customer
+     *        is upgraded to MissionBehavior regardless of their TripPurpose.
+     */
+    Agent(std::shared_ptr<Customer> c, Basket b, float missionProbability,
+          std::default_random_engine &engine);
+
+    /** Tick the agent. Returns false when the agent should be despawned. */
+    bool update(float dt, const StoreGraph &store,
+                CheckoutQueueManager *queueManager = nullptr);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Simulator
+// ─────────────────────────────────────────────────────────────────────────────
+class Simulator {
+  public:
+    // ── Construction / Lifecycle ────────────────────────────────────────────
+
+    /**
+     * @param yamlPath          Path to store.yaml.
+     * @param spawnInterval     Seconds of sim-time between customer spawns.
+     * @param missionProbability Fraction of spawned customers assigned
+     *        MissionBehavior (0 = all Default, 1 = all Mission).
+     * @param seed              Random seed; 0 = use std::random_device (non-deterministic).
+     *        Non-zero gives reproducible runs (e.g. same seed after reset()).
+     */
+    explicit Simulator(const std::string &yamlPath,
+                       float spawnInterval     = 5.0f,
+                       float missionProbability = 0.5f,
+                       std::uint32_t seed      = 0);
+
+    // Non-copyable (owns unique_ptrs, mutex, large graph)
+    Simulator(const Simulator &)            = delete;
+    Simulator &operator=(const Simulator &) = delete;
+
+    // ── Core Tick API ───────────────────────────────────────────────────────
+
+    /**
+     * Advance simulation by dt seconds (one tick).
+     * Thread-safe with respect to getTransactions() / exportTransactions().
+     */
+    void step(float dt);
+
+    /**
+     * Blocking headless run for durationSeconds of sim-time.
+     * @param dt Fixed timestep per tick (default 1/60 s).
+     */
+    void run(double durationSeconds, float dt = 1.0f / 60.0f);
+
+    /**
+     * Tear down all agents and transactions, then reload the store from YAML.
+     * Useful for running multiple independent trials.
+     */
+    void reset();
+
+    // ── Data Access ─────────────────────────────────────────────────────────
+
+    /** Snapshot of all completed transactions (thread-safe copy). */
+    [[nodiscard]] std::vector<Transaction> getTransactions() const;
+
+    /** All customers ever spawned, including those still active. */
+    [[nodiscard]] std::vector<std::shared_ptr<Customer>> getCustomers() const;
+
+    /** Number of completed transactions (cheap, no copy). */
+    [[nodiscard]] size_t getTransactionCount() const;
+
+    /**
+     * Write completed transactions to a CSV file.
+     * Columns: transaction_id, customer_id, timestamp, satisfaction,
+     *          total_spent, item_id, item_name, quantity, price_per_unit,
+     *          item_total
+     * @throws std::runtime_error if the file cannot be opened.
+     */
+    void exportTransactions(const std::string &path) const;
+
+    // ── Config Setters (take effect on next step()) ──────────────────────────
+
+    void setSpawnInterval(float seconds)      { spawnInterval_      = seconds; }
+    void setMissionProbability(float p)       { missionProbability_ = p;       }
+
+    /** Set RNG seed for reproducible runs. Call before run() or after reset(). */
+    void setSeed(std::uint32_t seed)          { rng_.seed(seed);               }
+
+    // ── Accessors for the SFML Visualiser (sim.cpp) ─────────────────────────
+
+    [[nodiscard]] const StoreGraph           &getStore()          const { return store_;          }
+    [[nodiscard]] StoreGraph                 &getMutableStore()         { return store_;          }
+    [[nodiscard]] const StoreLayout          &getLayout()         const { return layout_;         }
+    [[nodiscard]] const CheckoutQueueManager &getQueueManager()   const { return queueManager_;  }
+    [[nodiscard]] CheckoutQueueManager       &getMutableQueueManager()  { return queueManager_;  }
+    [[nodiscard]] const CollisionManager     &getCollisionManager()const { return collisionManager_; }
+    [[nodiscard]] const std::vector<std::unique_ptr<Agent>> &getAgents() const { return agents_; }
+    [[nodiscard]] float getElapsedTime()  const { return elapsedTime_;  }
+    [[nodiscard]] float getSpawnInterval() const { return spawnInterval_; }
+    [[nodiscard]] float getMissionProbability() const { return missionProbability_; }
+    [[nodiscard]] std::vector<std::vector<std::uint64_t>> getCellVisitCounts() const {
+        return cellVisitCounts_;
+    }
+    [[nodiscard]] std::vector<float> getQueueSampleTimes() const {
+        return queueSampleTimes_;
+    }
+    [[nodiscard]] std::vector<std::vector<int>> getQueueLengthsHistory() const {
+        return queueLengthsHistory_;
+    }
+
+    /** Mission vs basket at checkout (captured before basket clear). Max 50 entries. */
+    [[nodiscard]] const std::deque<MissionCheckoutSnapshot> &getMissionCheckoutLog() const {
+        return missionCheckoutLog_;
+    }
+
+  private:
+    // ── Initialisation ───────────────────────────────────────────────────────
+    void loadStore();
+
+    // ── Per-Tick Helpers ────────────────────────────────────────────────────
+    void spawnAgent(float dt);
+    void updateAgents(float dt);
+    void finalizeCheckout(Agent &agent);
+    void removeDeadAgents();
+    void sampleQueues();
+
+    /**
+     * Resolve the best (edgeIdx, cellIdx) for a shelf-pick event.
+     * Tries layout-geometry first, then StoreGraph::findClosestCell, then
+     * falls back to distOnEdge-based indexing.
+     */
+    [[nodiscard]] std::pair<int, int> resolvePickCell(double px, double pz,
+                                                      int    edgeIdx,
+                                                      double distOnEdge,
+                                                      int    sku) const;
+
+    // ── Owned State ──────────────────────────────────────────────────────────
+    std::string yamlPath_;
+
+    StoreGraph            store_;
+    StoreLayout           layout_;
+    CheckoutQueueManager  queueManager_;
+    CollisionManager      collisionManager_;
+
+    std::vector<std::unique_ptr<Agent>>        agents_;
+    std::vector<std::shared_ptr<Customer>>     customerPool_;
+
+    mutable std::mutex          transactionMutex_;
+    std::vector<Transaction>    completedTransactions_;
+
+    std::default_random_engine rng_;
+
+    float  spawnTimer_        = 0.0f;
+    float  spawnInterval_     = 5.0f;
+    float  missionProbability_= 0.5f;
+    float  elapsedTime_       = 0.0f;
+    int    nextTransactionId_ = 1;
+
+    // Aggregated traffic metrics: per-edge, per-cell visit counts.
+    // Incremented once per tick for each agent based on its current edge/cell.
+    std::vector<std::vector<std::uint64_t>> cellVisitCounts_;
+
+    // Queue metrics: sampled once per tick after step().
+    // queueSampleTimes_[i] is the simulation time (seconds) at which the ith
+    // sample was taken. queueLengthsHistory_[lane][i] is the length of that
+    // lane's queue at the same sample.
+    std::vector<float>                queueSampleTimes_;
+    std::vector<std::vector<int>>     queueLengthsHistory_;
+
+    // Mission checkout log: snapshot (mission + basket) before basket clear. For UI.
+    static constexpr size_t MISSION_CHECKOUT_LOG_MAX = 50;
+    std::deque<MissionCheckoutSnapshot> missionCheckoutLog_;
+};
+
+} // namespace priceriot
+
+#endif // SIMULATOR_H

@@ -6,8 +6,13 @@ This document describes the layered abstraction and data flows of the PriceRiot 
 
 ```mermaid
 flowchart TB
+    subgraph Drivers [Drivers]
+        sim_cpp[sim.cpp SFML Visualiser]
+        py_mod[simulation Python module]
+    end
+
     subgraph SimLayer [Simulation Engine Layer]
-        sim[sim.cpp Main Loop]
+        Simulator[Simulator step run reset]
         transaction[Transaction]
         navmeshViz[NavMeshVisualizer]
     end
@@ -35,10 +40,12 @@ flowchart TB
         ShelfSide[ShelfSide]
     end
 
-    sim --> Customer
-    sim --> StoreGraph
-    sim --> StoreLayout
-    sim --> navmeshViz
+    sim_cpp -->|step getAgents getStore getLayout| Simulator
+    py_mod -->|step run get_transactions| Simulator
+    Simulator --> Customer
+    Simulator --> StoreGraph
+    Simulator --> StoreLayout
+    sim_cpp --> navmeshViz
     Customer --> Behavior
     Customer --> Basket
     Behavior --> StoreGraph
@@ -56,9 +63,14 @@ flowchart TB
 
 ### engine/
 
-- **sim.cpp**: Main simulation loop. Handles SFML window, ImGui controls, agent spawning/updating, collision management, and rendering.
+- **simulator.cpp/h**: Headless simulation core. Owns store graph, layout, agents, collision manager, checkout queues, and RNG. Exposes `step(dt)`, `run(duration, dt)`, `reset()`, and accessors for transactions, customers, and state. No SFML/ImGui; used by both the visualiser and the Python module.
+- **sim.cpp**: SFML visualiser. Creates a `Simulator`, drives it with `step(dt)` each frame, and renders using `getAgents()`, `getStore()`, `getLayout()`. All simulation logic lives in `Simulator`.
 - **transaction.cpp/h**: Transaction and line-item generation, CSV export.
 - **navmesh_visualizer.cpp/h**: SFML drawing of navmesh polygons, agent paths, and debug overlays.
+
+### bindings/
+
+- **priceriot_bindings.cpp**: pybind11 Python extension module `simulation`. Exposes `Simulator`, `Transaction`, `Customer`, `LineItem`, `TripPurpose` for headless runs and analytics. Built with the same C++ core as the simulator executable (no SFML).
 
 ### agents/
 
@@ -104,7 +116,7 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    participant Sim as sim.cpp
+    participant Sim as Simulator
     participant Cust as Customer
     participant Beh as ICustomerBehavior
     participant Nav as NavMeshPathfinder

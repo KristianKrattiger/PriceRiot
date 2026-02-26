@@ -1,9 +1,13 @@
 #include "collision_manager.h"
 #include "../agents/customer.h"
+#include "../agents/customer_behavior.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -36,6 +40,33 @@ void CollisionManager::clear() {
     registeredAgents.clear();
 }
 
+/** If PRICERIOT_DEBUG_COLLISION_LOG is set, return its value as the log path; else nullptr. */
+static const char *getCollisionDebugLogPath() {
+    const char *p = std::getenv("PRICERIOT_DEBUG_COLLISION_LOG");
+    return (p && *p) ? p : nullptr;
+}
+
+/**
+ * Helper: Determine if an agent is in a "stationary picking" state that should resist displacement.
+ * Returns true if agent is browsing/shopping at a shelf (high resistance to being pushed).
+ */
+static bool isAgentPicking(const Customer *agent) {
+    if (!agent || !agent->getBehavior())
+        return false;
+
+    // Check behavior state name
+    const char *stateName = agent->getBehavior()->getStateName();
+
+    // Agent is picking if in "Browsing" or "MissionBrowse" state AND has dwell ticks
+    // (dwellTicks > 0 means they're standing at a shelf picking items)
+    if ((strcmp(stateName, "Browsing") == 0 || strcmp(stateName, "MissionBrowse") == 0)
+        && agent->getDwellTicks() > 0) {
+        return true;
+    }
+
+    return false;
+}
+
 void CollisionManager::resolveCollisions(Customer *agent, double radius) {
     if (!agent)
         return;
@@ -49,14 +80,22 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
         Circle agentCircle(agentX, agentZ, radius);
         if (physicsWorld->checkCollision(agentCircle)) {
             physicsWorld->resolveCollision(agentCircle);
-            // #region debug log
-            { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H2\",\"location\":\"collision_manager.cpp:obstacle_push\",\"message\":\"Agent pushed out of obstacle\",\"data\":{\"customerId\":" << agent->getId() << ",\"posBeforeX\":" << agentX << ",\"posBeforeZ\":" << agentZ << ",\"posAfterX\":" << agentCircle.x << ",\"posAfterZ\":" << agentCircle.z << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-            // #endregion
+            if (const char *logPath = getCollisionDebugLogPath()) {
+                std::ofstream lf(logPath, std::ios::app);
+                if (lf)
+                    lf << "{\"hypothesisId\":\"H2\",\"location\":\"collision_manager.cpp:obstacle_push\",\"message\":\"Agent pushed out of obstacle\",\"data\":{\"customerId\":"
+                       << agent->getId() << ",\"posBeforeX\":" << agentX << ",\"posBeforeZ\":" << agentZ
+                       << ",\"posAfterX\":" << agentCircle.x << ",\"posAfterZ\":" << agentCircle.z
+                       << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            }
             agent->setPosition(agentCircle.x, agentCircle.z);
             agentX = agentCircle.x;
             agentZ = agentCircle.z;
         }
     }
+
+    // Check if this agent is picking (should resist being pushed)
+    bool agentIsPicking = isAgentPicking(agent);
 
     // Check collisions with other agents (using position after obstacle resolve)
     for (const auto &other : registeredAgents) {
@@ -87,14 +126,38 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
                 double nx = dx / dist;
                 double nz = dz / dist;
 
-                // Push both agents apart, but clamp so neither ends up inside an obstacle.
+                // *** KEY FIX: State-based mass ratio ***
+                // Picking agents get much higher "mass" - they barely move
+                // Moving agents take most of the displacement
+                bool otherIsPicking = isAgentPicking(other.agent);
+
+                double agentMassRatio;
+                if (agentIsPicking && otherIsPicking) {
+                    // Both picking: equal split (rare case)
+                    agentMassRatio = 0.5;
+                } else if (agentIsPicking) {
+                    // This agent is picking: it barely moves (10% of displacement)
+                    agentMassRatio = 0.1;
+                } else if (otherIsPicking) {
+                    // Other agent is picking: this agent takes most displacement (90%)
+                    agentMassRatio = 0.9;
+                } else {
+                    // Neither picking: equal split
+                    agentMassRatio = 0.5;
+                }
+
+                // Push both agents apart with mass consideration
                 double pushAmount = overlap / 2.0;
+
+                // Clamp push so neither ends up inside an obstacle
                 if (physicsWorld) {
                     double lo = 0.0, hi = pushAmount;
                     for (int iter = 0; iter < 16; ++iter) {
                         double mid = (lo + hi) * 0.5;
-                        double newAx = agentX + nx * mid, newAz = agentZ + nz * mid;
-                        double newOx = otherX - nx * mid, newOz = otherZ - nz * mid;
+                        double newAx = agentX + nx * mid * (2.0 * agentMassRatio);
+                        double newAz = agentZ + nz * mid * (2.0 * agentMassRatio);
+                        double newOx = otherX - nx * mid * (2.0 * (1.0 - agentMassRatio));
+                        double newOz = otherZ - nz * mid * (2.0 * (1.0 - agentMassRatio));
                         bool aOk = physicsWorld->isValidPosition(newAx, newAz, radius);
                         bool oOk = physicsWorld->isValidPosition(newOx, newOz, other.radius);
                         if (aOk && oOk)
@@ -104,8 +167,12 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
                     }
                     pushAmount = lo;
                 }
-                agent->setPosition(agentX + nx * pushAmount, agentZ + nz * pushAmount);
-                other.agent->setPosition(otherX - nx * pushAmount, otherZ - nz * pushAmount);
+
+                // Apply displacement with mass ratio
+                agent->setPosition(agentX + nx * pushAmount * (2.0 * agentMassRatio),
+                                  agentZ + nz * pushAmount * (2.0 * agentMassRatio));
+                other.agent->setPosition(otherX - nx * pushAmount * (2.0 * (1.0 - agentMassRatio)),
+                                        otherZ - nz * pushAmount * (2.0 * (1.0 - agentMassRatio)));
             }
         }
     }
@@ -118,9 +185,14 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
         Circle agentCircle(agentX, agentZ, radius);
         if (physicsWorld->checkCollision(agentCircle)) {
             physicsWorld->resolveCollision(agentCircle);
-            // #region debug log
-            { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H2\",\"location\":\"collision_manager.cpp:obstacle_push_after_agent\",\"message\":\"Agent pushed out of obstacle after agent-agent\",\"data\":{\"customerId\":" << agent->getId() << ",\"posBeforeX\":" << agentX << ",\"posBeforeZ\":" << agentZ << ",\"posAfterX\":" << agentCircle.x << ",\"posAfterZ\":" << agentCircle.z << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-            // #endregion
+            if (const char *logPath = getCollisionDebugLogPath()) {
+                std::ofstream lf(logPath, std::ios::app);
+                if (lf)
+                    lf << "{\"hypothesisId\":\"H2\",\"location\":\"collision_manager.cpp:obstacle_push_after_agent\",\"message\":\"Agent pushed out of obstacle after agent-agent\",\"data\":{\"customerId\":"
+                       << agent->getId() << ",\"posBeforeX\":" << agentX << ",\"posBeforeZ\":" << agentZ
+                       << ",\"posAfterX\":" << agentCircle.x << ",\"posAfterZ\":" << agentCircle.z
+                       << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            }
             agent->setPosition(agentCircle.x, agentCircle.z);
         }
     }
@@ -146,8 +218,15 @@ void CollisionManager::getAvoidanceVector(double x, double z, double radius, dou
         if (dist < 1e-6 || dist > maxDistance)
             continue;
 
+        // *** FIX: Increase avoidance radius for picking agents ***
+        // Other agents should steer around picking agents earlier
+        double effectiveRadius = other.radius;
+        if (isAgentPicking(other.agent)) {
+            effectiveRadius *= 2.0; // Double the avoidance radius for picking agents
+        }
+
         // Calculate repulsion strength (stronger when closer)
-        double combinedRadius = radius + other.radius;
+        double combinedRadius = radius + effectiveRadius;
         if (dist < combinedRadius) {
             // Already colliding, strong repulsion
             double weight = 1.0 / (dist + 0.1);

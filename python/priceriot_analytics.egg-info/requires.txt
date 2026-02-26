@@ -1,0 +1,6 @@
+pandas
+
+[dev]
+pytest
+matplotlib
+seaborn

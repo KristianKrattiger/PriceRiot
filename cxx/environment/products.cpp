@@ -7,6 +7,13 @@
 #include <map>
 #include <sstream>
 #include <utility>
+#include <filesystem>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 namespace priceriot {
 
@@ -16,8 +23,98 @@ void debugLogProduct(int sku, const std::string& name, const std::string& cat, d
     std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
     if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"products.cpp:loadProductsFromCSV\",\"message\":\"Product loaded\",\"data\":{\"sku\":" << sku << ",\"name\":\"" << name << "\",\"category\":\"" << cat << "\",\"price\":" << price << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
 }
-}
+} // namespace
 // #endregion
+
+namespace {
+
+// Resolve the project root by walking upward from the current module (exe/.pyd)
+// and looking for a directory that contains data/raw/products.csv or a common
+// sentinel such as CMakeLists.txt or README.md.
+static std::filesystem::path resolveProjectRootFromModule() {
+    namespace fs = std::filesystem;
+
+    fs::path modulePath;
+
+#if defined(_WIN32)
+    HMODULE hModule = nullptr;
+    if (GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(&resolveProjectRootFromModule),
+            &hModule)) {
+        char buffer[MAX_PATH]{};
+        DWORD len = GetModuleFileNameA(hModule, buffer, static_cast<DWORD>(sizeof(buffer)));
+        if (len > 0 && len < static_cast<DWORD>(sizeof(buffer))) {
+            modulePath = fs::path(buffer);
+        }
+    }
+#else
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<void *>(&resolveProjectRootFromModule), &info) && info.dli_fname) {
+        modulePath = fs::path(info.dli_fname);
+    }
+#endif
+
+    if (modulePath.empty()) {
+        // Fallback: current working directory (better than nothing)
+        return fs::current_path();
+    }
+
+    fs::path dir = modulePath.parent_path();
+    fs::path lastSentinelDir;
+
+    while (!dir.empty()) {
+        // Preferred: explicit CSV location
+        if (std::filesystem::exists(dir / "data" / "raw" / "products.csv")) {
+            return dir;
+        }
+
+        if (std::filesystem::exists(dir / "CMakeLists.txt") ||
+            std::filesystem::exists(dir / "README.md") ||
+            std::filesystem::exists(dir / ".git")) {
+            lastSentinelDir = dir;
+        }
+
+        auto parent = dir.parent_path();
+        if (parent == dir)
+            break;
+        dir = parent;
+    }
+
+    if (!lastSentinelDir.empty())
+        return lastSentinelDir;
+
+    return fs::current_path();
+}
+
+static std::string resolveProductsCsvPath() {
+    namespace fs = std::filesystem;
+
+    const fs::path root = resolveProjectRootFromModule();
+    const fs::path canonicalCsv = root / "data" / "raw" / "products.csv";
+    if (fs::exists(canonicalCsv)) {
+        return canonicalCsv.string();
+    }
+
+    // Fallbacks for older workflows: relative to CWD.
+    const fs::path rel1 = fs::path("data") / "raw" / "products.csv";
+    if (fs::exists(rel1))
+        return rel1.string();
+
+    const fs::path rel2 = fs::path("..") / "data" / "raw" / "products.csv";
+    if (fs::exists(rel2))
+        return rel2.string();
+
+    const fs::path rel3 = fs::path("..") / ".." / "data" / "raw" / "products.csv";
+    if (fs::exists(rel3))
+        return rel3.string();
+
+    // Last resort: original relative path; loader will log an error if it fails.
+    return std::string("data/raw/products.csv");
+}
+
+} // namespace
 
 // Minimal CSV loader used at construction time.
 // Expected columns (header optional): sku,name,category,price,popularity
@@ -114,7 +211,8 @@ static std::map<int, Product> loadProductsFromCSV_min(const std::string &path) {
 
 // ---------------- Products ----------------
 
-Products::Products() : productsMap_(loadProductsFromCSV_min("../../data/raw/products.csv")) {}
+Products::Products()
+    : productsMap_(loadProductsFromCSV_min(resolveProductsCsvPath())) {}
 
 // Add/Update by fields
 void Products::addProduct(int sku, const std::string &name, double price,

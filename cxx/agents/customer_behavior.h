@@ -18,13 +18,15 @@ class StoreGraph;
 class Basket;
 class Customer;
 class CheckoutQueueManager;
+class CollisionManager;
 
 /** Context passed to decide(): store graph, basket, delta time, and optional queue manager. */
 struct ICustomerBehaviorContext {
     const StoreGraph &store;
     const Basket &basket;
     double dt;
-    CheckoutQueueManager *queueManager = nullptr; // Optional: for checkout queue integration
+    CheckoutQueueManager *queueManager = nullptr;   // Optional: for checkout queue integration
+    CollisionManager *collisionManager = nullptr;   // Optional: for steering avoidance
 };
 
 /** Output of ICustomerBehavior::decide(): action type and optional target. */
