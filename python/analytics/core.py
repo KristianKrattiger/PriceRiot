@@ -44,6 +44,11 @@ def _discover_project_root(start: Optional[str] = None) -> str:
 
 # Project root and build dirs for simulation.pyd
 _ROOT = _discover_project_root()
+
+
+def get_project_root() -> str:
+    """Return the project root directory (for ingestion, dashboard, etc.)."""
+    return _ROOT
 _BUILD = os.path.join(_ROOT, "build")
 _RELEASE = os.path.join(_ROOT, "build", "Release")
 

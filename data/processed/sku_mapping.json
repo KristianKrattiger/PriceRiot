@@ -1,0 +1,27 @@
+{
+  "mapping": {
+    "Mop": 2
+  },
+  "unmapped": [
+    "Toothpaste",
+    "Hand Sanitizer",
+    "Paper Towels",
+    "Olive Oil",
+    "Carrots",
+    "Pickles",
+    "Honey",
+    "Chips",
+    "Insect Repellent",
+    "Vinegar",
+    "Spinach",
+    "Shaving Cream",
+    "Tuna",
+    "Cleaning Spray",
+    "Ketchup",
+    "Peanut Butter",
+    "Feminine Hygiene Products",
+    "Hair Gel",
+    "Toothbrush"
+  ],
+  "threshold": 70
+}

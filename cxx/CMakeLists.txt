@@ -4,7 +4,6 @@ project(PriceRiot)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- Fix for the FetchContent_Populate deprecation warning ---
 cmake_policy(SET CMP0169 OLD)
 
 include(FetchContent)

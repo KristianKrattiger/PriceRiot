@@ -3,3 +3,8 @@ uvicorn~=0.34.0
 fastapi~=0.115.8
 setuptools~=75.8.0
 pybind11~=2.13.6
+streamlit
+numpy
+seaborn
+matplotlib
+rapidfuzz
