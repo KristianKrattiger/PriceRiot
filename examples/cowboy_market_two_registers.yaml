@@ -1,0 +1,445 @@
+products_file: data/raw/products.csv
+
+nodes:
+  - id: 1
+    type: Entrance
+    x: 0.0
+    z: 0.0
+    length: 4.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 1.0
+    exit_rate: 0.0
+
+  - id: 2
+    type: Junction
+    x: 8.0
+    z: 0.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  # Back of three parallel aisles
+  - id: 3
+    type: Junction
+    x: 16.0
+    z: -4.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 4
+    type: Junction
+    x: 16.0
+    z: 0.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 5
+    type: Junction
+    x: 16.0
+    z: 4.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  # Two registers side-by-side
+  - id: 6
+    type: Register
+    x: 24.0
+    z: -1.5
+    length: 6.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 5.0
+    service_rate: 0.5
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 8
+    type: Register
+    x: 24.0
+    z: 1.5
+    length: 6.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 5.0
+    service_rate: 0.5
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 7
+    type: Exit
+    x: 30.0
+    z: 0.0
+    length: 4.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 1.0
+
+edges:
+  # Entrance corridor (no shelves)
+  - id: 1
+    from: 1
+    to: 2
+    length: 8.0
+    width: 3.5
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+  # Three parallel cowboy aisles from front junction to back junctions
+  - id: 2
+    from: 2
+    to: 3
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.5
+    shelf_right: 0.5
+
+  - id: 3
+    from: 2
+    to: 4
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.5
+    shelf_right: 0.5
+
+  - id: 4
+    from: 2
+    to: 5
+    length: 8.0
+    width: 2.5
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.5
+    shelf_right: 0.5
+
+  # Back-of-aisle connections to each register
+  - id: 5
+    from: 3
+    to: 6
+    length: 8.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.3
+    shelf_right: 0.3
+
+  - id: 6
+    from: 4
+    to: 6
+    length: 8.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.3
+    shelf_right: 0.3
+
+  - id: 7
+    from: 4
+    to: 8
+    length: 8.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.3
+    shelf_right: 0.3
+
+  - id: 8
+    from: 5
+    to: 8
+    length: 8.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.3
+    shelf_right: 0.3
+
+  # Registers to shared exit corridor (no shelves)
+  - id: 9
+    from: 6
+    to: 7
+    length: 6.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+  - id: 10
+    from: 8
+    to: 7
+    length: 6.0
+    width: 3.0
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+planogram:
+  edges:
+    # Aisle 1: Cowboy foods
+    "2":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 11
+            on_shelf_qty: 25
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 12
+            on_shelf_qty: 25
+
+    # Aisle 2: More cowboy foods + ranch supplies
+    "3":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 13
+            on_shelf_qty: 20
+          - bay: 0
+            face: 0
+            slot: 1
+            sku: 14
+            on_shelf_qty: 20
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 15
+            on_shelf_qty: 20
+          - bay: 0
+            face: 0
+            slot: 1
+            sku: 16
+            on_shelf_qty: 15
+
+    # Aisle 3: Ranch supplies and western apparel
+    "4":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 17
+            on_shelf_qty: 15
+          - bay: 0
+            face: 0
+            slot: 1
+            sku: 18
+            on_shelf_qty: 15
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 21
+            on_shelf_qty: 15
+          - bay: 0
+            face: 0
+            slot: 1
+            sku: 22
+            on_shelf_qty: 10
+
+    # Back-of-aisle connectors: mix of extras so shelves stay full
+    "5":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 19
+            on_shelf_qty: 10
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 20
+            on_shelf_qty: 12
+
+    "6":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 23
+            on_shelf_qty: 20
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 24
+            on_shelf_qty: 12
+
+    "7":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 11
+            on_shelf_qty: 20
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 14
+            on_shelf_qty: 20
+
+    "8":
+      left_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 19
+            on_shelf_qty: 10
+      right_side:
+        bay_count: 1
+        planogram:
+          - bay: 0
+            face: 0
+            slot: 0
+            sku: 23
+            on_shelf_qty: 12
+
+checkout_queues:
+  - register_id: 6
+    processing_time: 5.0
+    waypoints:
+      - { x: 24.0, z: -1.5 }
+      - { x: 22.5, z: -1.5 }
+      - { x: 21.0, z: -1.5 }
+      - { x: 19.5, z: -1.5 }
+
+  - register_id: 8
+    processing_time: 5.0
+    waypoints:
+      - { x: 24.0, z: 1.5 }
+      - { x: 22.5, z: 1.5 }
+      - { x: 21.0, z: 1.5 }
+      - { x: 19.5, z: 1.5 }
+

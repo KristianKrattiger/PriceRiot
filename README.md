@@ -28,7 +28,7 @@ For a deeper architectural view (layers, data flows, modules), see
 ## Project structure (high level)
 
 ```text
-PriceRiot-main/
+PriceRiot/
 ├── cxx/                         # C++ simulation engine
 │   ├── docs/
 │   │   ├── ARCHITECTURE.md      # Engine layering and data flows
@@ -40,8 +40,9 @@ PriceRiot-main/
 │   └── tools/                   # CSV utilities, misc tools
 ├── python/
 │   ├── analytics/               # run_simulation helpers, DataFrame converters
+│   ├── dashboard/               # Streamlit dashboard (simulation + POS analysis)
 │   ├── run_analysis.py          # CLI to run a sim and export CSVs
-│   ├── main.py                  # FastAPI skeleton (POST /sim/run)
+│   ├── main.py                  # FastAPI API (POST /sim/run) over the simulation module
 │   └── data_processing.py       # Example CSV analytics on external datasets
 ├── notebooks/
 │   ├── basic_analysis.ipynb     # Transactions/customers + basket composition
@@ -52,6 +53,8 @@ PriceRiot-main/
 ├── data/
 │   ├── raw/                     # Input CSV datasets
 │   └── processed/               # Generated analytics outputs
+├── fonts/                       # Fonts used by the SFML/ImGui visualiser
+├── imgui.ini                    # ImGui layout/settings for the visualiser
 ├── scripts/
 │   ├── build_and_test.ps1       # Windows: build + Python smoke tests
 │   └── build_and_test.sh        # Linux/macOS: build + Python smoke tests
@@ -87,7 +90,7 @@ cd PriceRiot-main
 ```
 
 These scripts:
-- Configure and build the C++ simulator and the `simulation` Python extension into `build/` (and `build/Release` on multi-config generators).
+- Configure and build the C++ simulator and the `simulation` Python extension into `build/` (and `build/Release` on multi-config generators such as MSVC).
 - Run the Python smoke tests in `tests/test_simulation.py`.
 
 To run the raw CMake commands manually:
@@ -100,7 +103,7 @@ cmake --build . --config Release
 
 ### Run the C++ visualiser
 
-From the `build/` directory (or wherever your CMake generator places binaries):
+From the `build/` directory (or wherever your CMake generator places binaries, e.g. `build/Release/` on multi-config generators):
 
 ```bash
 ./simulator                      # Uses store.yaml in the working directory
@@ -114,7 +117,7 @@ ImGui controls let you pause/resume, adjust spawn interval and time scale, inspe
 
 ### Python module and tests
 
-The pybind module `simulation` is built into `build/` (and possibly `build/Release`). To run tests from the project root:
+The pybind module `simulation` is built into `build/` (and possibly `build/Release` on multi-config generators). To run tests from the project root:
 
 ```bash
 # Windows PowerShell
@@ -213,6 +216,23 @@ PYTHONPATH=build:python jupyter lab
 Then open:
 - `notebooks/basic_analysis.ipynb` – end-to-end run producing transactions/customers and basic basket stats.
 - `notebooks/queues_and_heatmaps.ipynb` – visualise queue lengths over time and traffic heatmaps over edge/cell space.
+
+### Dashboard quickstart
+
+The Streamlit dashboard provides an interactive UI for running simulations and exploring results (including POS analytics).
+
+From the project root, with the `simulation` module built and available:
+
+```bash
+# Windows PowerShell
+$env:PYTHONPATH = "build;python"
+streamlit run python/dashboard/app.py
+
+# Linux/macOS
+PYTHONPATH=build:python streamlit run python/dashboard/app.py
+```
+
+The sidebar lets you switch between **Simulation** and **POS Analysis** modes, configure run parameters, and view charts and tables backed by the same analytics helpers.
 
 ## Configuration
 

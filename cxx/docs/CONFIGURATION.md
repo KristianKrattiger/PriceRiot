@@ -52,12 +52,21 @@ nodes:
     exit_rate: 0.0
 ```
 
-- `id`: Unique integer node ID.
-- `type`: Logical role; influences agent spawning and routing.
-- `(x, z)`: World-space centre in metres.
-- `length`, `width`: Physical footprint used for layout and navmesh.
-- `personal_space`, `jam_density`: Traffic model parameters.
-- `entry_rate`, `exit_rate`: Control spawn/exit behaviour at entrances/exits.
+- **Required fields**
+  - `id`: Unique integer node ID.
+  - `type`: Logical role; influences agent spawning and routing.
+  - `(x, z)`: World-space centre in metres.
+  - `length`, `width`: Physical footprint used for layout and navmesh.
+- **Traffic and behaviour parameters**
+  - `personal_space`: Desired spacing between agents in metres.
+  - `jam_density`: Approximate density (agents/m²) at which flow degrades.
+  - `blocked`: Fraction \[0, 1\] of time the node is unavailable (e.g. maintenance).
+  - `dwell_s`: Mean dwell time in seconds for agents that stop at this node.
+  - `service_rate`: Customers per second processed at `Register` nodes.
+  - `agents`: Initial number of agents at the node (usually `0`).
+  - `entry_rate`, `exit_rate`: Control spawn/exit behaviour at entrances/exits.
+
+If a field is omitted, the engine applies defaults (see `environment.cpp`) that are reasonable for low- to medium-traffic scenarios.
 
 ## Edges (aisles)
 
@@ -82,6 +91,10 @@ edges:
 - `id`: Unique integer edge ID.
 - `from`, `to`: Node IDs forming the graph.
 - `length`, `width`: Physical aisle geometry.
+- `free_speed`: Nominal walking speed along this edge (m/s).
+- `jam_density`, `blocked`: Traffic model parameters as for nodes.
+- `flow`: `uni` or `bi`, constraining permitted movement directions.
+- `orientation`: Visualisation hint (`fwd` or `rev`) for drawing arrows/labels.
 - `shelf_left`, `shelf_right`: Shelf protrusion depths used to generate
   stalls, navmesh obstacles, and capacity.
 
@@ -115,8 +128,17 @@ planogram:
 Each entry describes how many bays exist on that side and which SKUs occupy
 which `(bay, face, slot)` positions, along with initial on-shelf quantities.
 
+Conceptually:
+
+- `bay`: Index into the longitudinal bays along the edge.
+- `face`: Vertical face of a bay (0 = front, higher indices = higher/lower shelves depending on convention).
+- `slot`: Position within a face (e.g. left to right along the shelf).
+
 `left_side` and `right_side` sections at the top level act as **fallbacks**
-for any edges not explicitly listed in `planogram.edges`.
+for any edges not explicitly listed in `planogram.edges`. For an edge:
+
+- If it appears in `planogram.edges`, its `left_side`/`right_side` override any top-level defaults.
+- Otherwise, the engine applies the top-level `left_side`/`right_side` definitions (if present).
 
 ## Checkout queues
 
@@ -143,6 +165,8 @@ The engine uses these definitions via `CheckoutQueueManager` to:
 - Place customers at the correct waypoint for their position.
 - Advance queues when checkout completes.
 
+Higher `processing_time` values lead to longer queues and higher utilisation in simulation results. The spacing and count of `waypoints` influence how congestion appears around registers and how many customers can wait comfortably in line.
+
 ## Example scenarios
 
 Package multiple layouts under `examples/` for easy scenario switching, e.g.:
@@ -157,4 +181,13 @@ in Python or via the visualiser (see `sim.cpp`), e.g.:
 ```bash
 ./simulator examples/store_bottleneck.yaml
 ```
+
+For basic schema validation, you can also run the Python smoke tests against a given layout:
+
+```bash
+# From project root, with PYTHONPATH set to include build/ (and python/ if needed)
+PYTHONPATH=build:python python tests/test_simulation.py
+```
+
+This exercises construction and stepping with the configured `store.yaml` and will fail fast on gross configuration errors.
 

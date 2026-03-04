@@ -7,56 +7,63 @@ This document describes the layered abstraction and data flows of the PriceRiot 
 ```mermaid
 flowchart TB
     subgraph Drivers [Drivers]
-        sim_cpp[sim.cpp SFML Visualiser]
-        py_mod[simulation Python module]
+        sim_cpp[sim.cpp SFML_Visualiser]
+        py_mod[simulation Python_module]
+        api_main[python.main FastAPI_API]
+        dashboard[python.dashboard Streamlit_Dashboard]
     end
 
-    subgraph SimLayer [Simulation Engine Layer]
-        Simulator[Simulator step run reset]
-        transaction[Transaction]
+    subgraph SimLayer [Simulation_Engine_Layer]
+        simulatorNode[Simulator step_run_reset]
+        transactionNode[Transaction]
         navmeshViz[NavMeshVisualizer]
     end
 
-    subgraph AgentLayer [Agent Layer]
-        Customer[Customer]
-        Behavior[ICustomerBehavior]
-        Basket[Basket]
-        Staff[Staff]
+    subgraph AgentLayer [Agent_Layer]
+        customerNode[Customer]
+        behaviorNode[ICustomerBehavior]
+        basketNode[Basket]
+        staffNode[Staff]
     end
 
-    subgraph EnvLayer [Environment Layer]
-        StoreGraph[StoreGraph]
-        StoreLayout[StoreLayout]
-        NavMesh[NavMesh]
-        PhysicsWorld[PhysicsWorld]
-        CollisionMgr[CollisionManager]
+    subgraph EnvLayer [Environment_Layer]
+        storeGraphNode[StoreGraph]
+        storeLayoutNode[StoreLayout]
+        navMeshNode[NavMesh]
+        physicsWorldNode[PhysicsWorld]
+        collisionMgrNode[CollisionManager]
     end
 
-    subgraph CoreData [Core Data]
-        Node[Node]
-        Edge[Edge]
-        EdgeCell[EdgeCell]
-        NavPolygon[NavPolygon]
-        ShelfSide[ShelfSide]
+    subgraph CoreData [Core_Data]
+        nodeCore[Node]
+        edgeCore[Edge]
+        edgeCellCore[EdgeCell]
+        navPolygonCore[NavPolygon]
+        shelfSideCore[ShelfSide]
     end
 
-    sim_cpp -->|step getAgents getStore getLayout| Simulator
-    py_mod -->|step run get_transactions| Simulator
-    Simulator --> Customer
-    Simulator --> StoreGraph
-    Simulator --> StoreLayout
+    sim_cpp -->|"step() getAgents() getStore() getLayout()"| simulatorNode
+    py_mod -->|"step() run() get_transactions()"| simulatorNode
+    api_main -->|"POST /sim/run"| simulatorNode
+    dashboard -->|"run_simulation() via analytics"| py_mod
+
+    simulatorNode --> customerNode
+    simulatorNode --> storeGraphNode
+    simulatorNode --> storeLayoutNode
     sim_cpp --> navmeshViz
-    Customer --> Behavior
-    Customer --> Basket
-    Behavior --> StoreGraph
-    Behavior --> NavMesh
-    StoreGraph --> Node
-    StoreGraph --> Edge
-    StoreGraph --> NavMesh
-    StoreGraph --> PhysicsWorld
-    Edge --> EdgeCell
-    EdgeCell --> ShelfSide
-    NavMesh --> NavPolygon
+
+    customerNode --> behaviorNode
+    customerNode --> basketNode
+    behaviorNode --> storeGraphNode
+    behaviorNode --> navMeshNode
+
+    storeGraphNode --> nodeCore
+    storeGraphNode --> edgeCore
+    storeGraphNode --> navMeshNode
+    storeGraphNode --> physicsWorldNode
+    edgeCore --> edgeCellCore
+    edgeCellCore --> shelfSideCore
+    navMeshNode --> navPolygonCore
 ```
 
 ## Module Responsibilities
@@ -67,10 +74,18 @@ flowchart TB
 - **sim.cpp**: SFML visualiser. Creates a `Simulator`, drives it with `step(dt)` each frame, and renders using `getAgents()`, `getStore()`, `getLayout()`. All simulation logic lives in `Simulator`.
 - **transaction.cpp/h**: Transaction and line-item generation, CSV export.
 - **navmesh_visualizer.cpp/h**: SFML drawing of navmesh polygons, agent paths, and debug overlays.
+- **metrics/heatmap helpers (within simulator/environment)**: Aggregate per-edge and per-cell visit counts, queue length histories, and other metrics that are exposed via the C++ API and surfaced in Python analytics.
 
 ### bindings/
 
 - **priceriot_bindings.cpp**: pybind11 Python extension module `simulation`. Exposes `Simulator`, `Transaction`, `Customer`, `LineItem`, `TripPurpose` for headless runs and analytics. Built with the same C++ core as the simulator executable (no SFML).
+
+On top of this extension:
+
+- `python/analytics/core.py` wraps the raw C++ API with higher-level helpers that return pandas DataFrames (transactions, customers, heatmaps, queue metrics).
+- `python/run_analysis.py` provides a CLI to run headless simulations and export CSVs into `data/processed/`.
+- `python/main.py` exposes a FastAPI service (`POST /sim/run`) that runs bounded-duration simulations per request.
+- `python/dashboard/app.py` implements a Streamlit dashboard for interactive simulation and POS analytics.
 
 ### agents/
 
