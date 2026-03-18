@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -36,8 +37,9 @@ Agent::Agent(std::shared_ptr<Customer> c, Basket b, float missionProbability,
 }
 
 bool Agent::update(float dt, const StoreGraph &store,
-                   CheckoutQueueManager *queueManager) {
-    bool alive = cust->update(dt, store, basket, queueManager);
+                   CheckoutQueueManager *queueManager,
+                   CollisionManager *collisionManager) {
+    bool alive = cust->update(dt, store, basket, queueManager, collisionManager);
     // Legacy flag: set if basket was already cleared externally.
     if (basket.getSize() == 0 && cust->getTotalSpent() > 0)
         hasPaid = true;
@@ -230,32 +232,78 @@ void Simulator::spawnAgent(float dt) {
 }
 
 void Simulator::updateAgents(float dt) {
+    // Rebuild spatial hash for this tick using agent positions from the previous frame.
+    // This is used for fast nearby-agent queries (e.g. separation forces).
+    {
+        SpatialHash &spatialHash = store_.getSpatialHash();
+        spatialHash.clear();
+        for (auto &ag : agents_) {
+            if (!ag || !ag->cust)
+                continue;
+            spatialHash.insert(ag->cust.get(), ag->cust->getPosX(), ag->cust->getPosZ());
+        }
+    }
+
+    // Recompute node occupancy based on current agent positions.
+    {
+        const int nodeCount = store_.numNodes();
+        for (int i = 0; i < nodeCount; ++i) {
+            store_.mutableNodeAt(i).clearOccupants();
+        }
+
+        // Associate each agent with the nearest node within a small radius.
+        constexpr double kMaxNodeRadius = 2.0;
+        const double maxDistSq = kMaxNodeRadius * kMaxNodeRadius;
+        for (auto &ag : agents_) {
+            if (!ag || !ag->cust)
+                continue;
+            double px = ag->cust->getPosX();
+            double pz = ag->cust->getPosZ();
+            int bestIdx = -1;
+            double bestD2 = maxDistSq;
+            for (int n = 0; n < nodeCount; ++n) {
+                const Node &node = store_.nodeAt(n);
+                double dx = px - node.getX();
+                double dz = pz - node.getZ();
+                double d2 = dx * dx + dz * dz;
+                if (d2 < bestD2) {
+                    bestD2 = d2;
+                    bestIdx = n;
+                }
+            }
+            if (bestIdx >= 0) {
+                store_.mutableNodeAt(bestIdx).registerOccupant(ag->cust->getId());
+            }
+        }
+    }
+
     // Re-register agents in case any were added this tick
     for (auto &ag : agents_)
         collisionManager_.registerAgent(ag->cust.get(), 0.35);
+
+    bool hasPhysics = store_.hasPhysicsWorld();
+    CollisionManager *cmPtr = hasPhysics ? &collisionManager_ : nullptr;
+    // #region agent log
+    {
+        static int tickCount = 0;
+        if (agents_.size() > 0 && (tickCount++ % 60 == 0)) {
+            const char *logPath = std::getenv("PRICERIOT_DEBUG_LOG");
+            if (!logPath || !logPath[0]) logPath = "C:/Users/krist/Projects/PriceRiot/debug-01e413.log";
+            std::ofstream lf(logPath, std::ios::app);
+            if (lf) {
+                auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                lf << "{\"sessionId\":\"01e413\",\"hypothesisId\":\"H1\",\"location\":\"simulator.cpp:updateAgents\",\"message\":\"collision manager wiring\",\"data\":{\"hasPhysicsWorld\":" << (hasPhysics ? "true" : "false") << ",\"cmPassed\":" << (cmPtr != nullptr ? "true" : "false") << ",\"agentCount\":" << agents_.size() << "},\"timestamp\":" << ts << "}\n";
+            }
+        }
+    }
+    // #endregion
 
     for (auto &ag : agents_) {
         if (!ag->cust)
             continue;
 
-        // ── Avoidance steering (pre-movement) ──────────────────────────────
-        if (store_.hasPhysicsWorld()) {
-            double avoidX = 0.0, avoidZ = 0.0;
-            collisionManager_.getAvoidanceVector(
-                ag->cust->getPosX(), ag->cust->getPosZ(),
-                0.35, avoidX, avoidZ, 2.0);
-
-            if (std::abs(avoidX) > 0.01 || std::abs(avoidZ) > 0.01) {
-                const double strength = 0.3 * static_cast<double>(dt);
-                const double nx = ag->cust->getPosX() + avoidX * strength;
-                const double nz = ag->cust->getPosZ() + avoidZ * strength;
-                if (store_.getPhysicsWorld().isValidPosition(nx, nz, 0.35))
-                    ag->cust->setPosition(nx, nz);
-            }
-        }
-
-        // ── Behavior tick ───────────────────────────────────────────────────
-        ag->update(dt, store_, &queueManager_);
+        // ── Behavior tick (avoidance is blended inside behavior when collision manager is set) ─
+        ag->update(dt, store_, &queueManager_, cmPtr);
 
         // ── Handle: PickProduct ─────────────────────────────────────────────
         if (ag->cust->getLastDecisionType() ==

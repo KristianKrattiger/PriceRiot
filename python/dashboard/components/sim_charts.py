@@ -3,6 +3,7 @@ Simulation result tabs: Overview, Basket & SKUs, Traffic & Heatmap, Queue & Chec
 """
 from typing import Any, Dict, List, Optional
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -51,7 +52,22 @@ def _tab_overview(tx: pd.DataFrame, cust: pd.DataFrame) -> None:
             tuc["minute"] = tuc["ts"].dt.hour * 60 + tuc["ts"].dt.minute
             vol = tuc.groupby("minute").size().reset_index(name="count")
             st.subheader("Transaction volume over time")
-            st.line_chart(vol.set_index("minute"))
+            vol_chart = (
+                alt.Chart(vol)
+                .mark_line(color="#8be9fd")
+                .encode(
+                    x=alt.X("minute:Q", title="Minute"),
+                    y=alt.Y("count:Q", title="Transactions"),
+                )
+                .properties(height=260)
+                .configure_view(fill="#282a36")
+                .configure_axis(
+                    labelColor="#f8f8f2",
+                    titleColor="#f8f8f2",
+                    gridColor="#44475a",
+                )
+            )
+            st.altair_chart(vol_chart, use_container_width=True)
 
     # Revenue over time
     if "timestamp" in tx_unique.columns and "total_spent" in tx_unique.columns:
@@ -60,7 +76,22 @@ def _tab_overview(tx: pd.DataFrame, cust: pd.DataFrame) -> None:
         tuc["minute"] = tuc["ts"].dt.hour * 60 + tuc["ts"].dt.minute
         rev = tuc.groupby("minute")["total_spent"].sum().reset_index(name="revenue")
         st.subheader("Revenue over time")
-        st.line_chart(rev.set_index("minute"))
+        rev_chart = (
+            alt.Chart(rev)
+            .mark_line(color="#bd93f9")
+            .encode(
+                x=alt.X("minute:Q", title="Minute"),
+                y=alt.Y("revenue:Q", title="Revenue"),
+            )
+            .properties(height=260)
+            .configure_view(fill="#282a36")
+            .configure_axis(
+                labelColor="#f8f8f2",
+                titleColor="#f8f8f2",
+                gridColor="#44475a",
+            )
+        )
+        st.altair_chart(rev_chart, use_container_width=True)
 
 
 def _tab_basket_skus(tx: pd.DataFrame) -> None:
@@ -74,16 +105,71 @@ def _tab_basket_skus(tx: pd.DataFrame) -> None:
 
     top_qty = df.groupby("item_name")["quantity"].sum().sort_values(ascending=False).head(10)
     st.subheader("Top 10 SKUs by quantity sold")
-    st.bar_chart(top_qty)
+    qty_df = top_qty.reset_index().rename(columns={"item_name": "item_name", "quantity": "quantity"})
+    qty_chart = (
+        alt.Chart(qty_df)
+        .mark_bar(color="#bd93f9")
+        .encode(
+            y=alt.Y("item_name:N", sort="-x", title="SKU"),
+            x=alt.X("quantity:Q", title="Quantity"),
+        )
+        .properties(height=320)
+        .configure_view(fill="#282a36")
+        .configure_axis(
+            labelColor="#f8f8f2",
+            titleColor="#f8f8f2",
+            gridColor="#44475a",
+        )
+    )
+    st.altair_chart(qty_chart, use_container_width=True)
 
     df["revenue"] = df.get("item_total", df["quantity"] * df.get("price_per_unit", 0))
     top_rev = df.groupby("item_name")["revenue"].sum().sort_values(ascending=False).head(10)
     st.subheader("Top 10 SKUs by revenue")
-    st.bar_chart(top_rev)
+    rev_df = top_rev.reset_index().rename(columns={"item_name": "item_name", "revenue": "revenue"})
+    rev_chart = (
+        alt.Chart(rev_df)
+        .mark_bar(color="#8be9fd")
+        .encode(
+            y=alt.Y("item_name:N", sort="-x", title="SKU"),
+            x=alt.X("revenue:Q", title="Revenue"),
+        )
+        .properties(height=320)
+        .configure_view(fill="#282a36")
+        .configure_axis(
+            labelColor="#f8f8f2",
+            titleColor="#f8f8f2",
+            gridColor="#44475a",
+        )
+    )
+    st.altair_chart(rev_chart, use_container_width=True)
 
     basket_sizes = tx.groupby("transaction_id").size() if "transaction_id" in tx.columns else pd.Series([len(tx)])
     st.subheader("Basket size distribution")
-    st.bar_chart(basket_sizes.value_counts().sort_index())
+    dist_df = (
+        basket_sizes.value_counts()
+        .sort_index()
+        .reset_index()
+        .rename(columns={"index": "items_per_basket", "transaction_id": "items_per_basket", 0: "count"})
+    )
+    if "items_per_basket" not in dist_df.columns:
+        dist_df.columns = ["items_per_basket", "count"]
+    dist_chart = (
+        alt.Chart(dist_df)
+        .mark_bar(color="#50fa7b")
+        .encode(
+            x=alt.X("items_per_basket:Q", title="Items per basket"),
+            y=alt.Y("count:Q", title="Number of baskets"),
+        )
+        .properties(height=260)
+        .configure_view(fill="#282a36")
+        .configure_axis(
+            labelColor="#f8f8f2",
+            titleColor="#f8f8f2",
+            gridColor="#44475a",
+        )
+    )
+    st.altair_chart(dist_chart, use_container_width=True)
 
     if "item_id" in tx.columns and tx["item_id"].notna().any():
         st.caption("Category breakdown: category data not in transaction output; use products.csv for reference.")
@@ -101,16 +187,40 @@ def _tab_traffic_heatmap(sim) -> None:
         return
     import seaborn as sns
     import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
     pivot = df.pivot(index="edge_index", columns="cell_index", values="visits").fillna(0)
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.heatmap(pivot, ax=ax, cmap="YlOrRd")
-    ax.set_title("Traffic heatmap (edge vs cell)")
+    fig.patch.set_facecolor("#282a36")
+    ax.set_facecolor("#1e1f29")
+    cmap = LinearSegmentedColormap.from_list(
+        "price_riot_dracula",
+        ["#1e1f29", "#bd93f9", "#ffb86c", "#ff5555"],
+    )
+    sns.heatmap(pivot, ax=ax, cmap=cmap)
+    ax.set_title("Traffic heatmap (edge vs cell)", color="#f8f8f2")
+    ax.tick_params(colors="#f8f8f2")
     st.pyplot(fig)
     plt.close()
 
     edge_totals = df.groupby("edge_index")["visits"].sum().sort_values(ascending=False).head(15)
     st.subheader("Most congested edges (by visit count)")
-    st.bar_chart(edge_totals)
+    edge_df = edge_totals.reset_index().rename(columns={"edge_index": "edge_index", "visits": "visits"})
+    edge_chart = (
+        alt.Chart(edge_df)
+        .mark_bar(color="#ffb86c")
+        .encode(
+            x=alt.X("edge_index:O", title="Edge"),
+            y=alt.Y("visits:Q", title="Visits"),
+        )
+        .properties(height=260)
+        .configure_view(fill="#282a36")
+        .configure_axis(
+            labelColor="#f8f8f2",
+            titleColor="#f8f8f2",
+            gridColor="#44475a",
+        )
+    )
+    st.altair_chart(edge_chart, use_container_width=True)
 
 
 def _tab_queue_checkout(sim) -> None:
@@ -136,7 +246,28 @@ def _tab_queue_checkout(sim) -> None:
     st.subheader("Queue length over time per lane")
     wide = df.pivot(index="time_s", columns="lane_index", values="queue_length").fillna(0)
     wide.columns = [f"Lane {c}" for c in wide.columns]
-    st.line_chart(wide)
+    long_df = wide.reset_index().melt(id_vars="time_s", var_name="lane", value_name="queue_length")
+    queue_chart = (
+        alt.Chart(long_df)
+        .mark_line()
+        .encode(
+            x=alt.X("time_s:Q", title="Time (s)"),
+            y=alt.Y("queue_length:Q", title="Queue length"),
+            color=alt.Color("lane:N", title="Lane"),
+        )
+        .properties(height=320)
+        .configure_view(fill="#282a36")
+        .configure_axis(
+            labelColor="#f8f8f2",
+            titleColor="#f8f8f2",
+            gridColor="#44475a",
+        )
+        .configure_legend(
+            labelColor="#f8f8f2",
+            titleColor="#f8f8f2",
+        )
+    )
+    st.altair_chart(queue_chart, use_container_width=True)
     st.caption("Payment method distribution not in current sim transaction output.")
 
 
@@ -183,8 +314,36 @@ def _tab_compare(runs: List[tuple]) -> None:
         u2["minute"] = u2["ts"].dt.hour * 60 + u2["ts"].dt.minute
         v1 = u1.groupby("minute").size().reset_index(name="Run A")
         v2 = u2.groupby("minute").size().reset_index(name="Run B")
-        merged = v1.merge(v2, on="minute", how="outer").fillna(0)
-        st.line_chart(merged.set_index("minute"))
+        v1["run"] = "Run A"
+        v2["run"] = "Run B"
+        v1 = v1.rename(columns={"Run A": "count"})
+        v2 = v2.rename(columns={"Run B": "count"})
+        merged = pd.concat([v1, v2], ignore_index=True)
+        vol_chart = (
+            alt.Chart(merged)
+            .mark_line()
+            .encode(
+                x=alt.X("minute:Q", title="Minute"),
+                y=alt.Y("count:Q", title="Transactions"),
+                color=alt.Color(
+                    "run:N",
+                    title="Run",
+                    scale=alt.Scale(range=["#8be9fd", "#bd93f9"]),
+                ),
+            )
+            .properties(height=320)
+            .configure_view(fill="#282a36")
+            .configure_axis(
+                labelColor="#f8f8f2",
+                titleColor="#f8f8f2",
+                gridColor="#44475a",
+            )
+            .configure_legend(
+                labelColor="#f8f8f2",
+                titleColor="#f8f8f2",
+            )
+        )
+        st.altair_chart(vol_chart, use_container_width=True)
 
 
 def render_tabs(
@@ -199,6 +358,84 @@ def render_tabs(
             st.info("Use the sidebar to run a simulation.")
             return
         _, run_result = runs[-1]
+
+    tx = getattr(run_result, "transactions", None)
+    if isinstance(tx, pd.DataFrame) and not tx.empty:
+        if "transaction_id" in tx.columns:
+            basket_sizes = tx.groupby("transaction_id").size()
+            avg_items_per_basket = float(basket_sizes.mean()) if len(basket_sizes) else 0.0
+            if "total_spent" in tx.columns:
+                tx_unique = tx.drop_duplicates(subset=["transaction_id"])
+                basket_values = tx_unique.set_index("transaction_id")["total_spent"]
+            elif "item_total" in tx.columns:
+                basket_values = tx.groupby("transaction_id")["item_total"].sum()
+            else:
+                basket_values = None
+            avg_basket_value = (
+                float(basket_values.mean()) if basket_values is not None and len(basket_values) else 0.0
+            )
+        else:
+            avg_items_per_basket = float(len(tx))
+            avg_basket_value = 0.0
+
+        category_share_df: Optional[pd.DataFrame] = None
+        category_col = None
+        for cand in ["category", "item_category", "department"]:
+            if cand in tx.columns:
+                category_col = cand
+                break
+        if category_col is not None:
+            if "item_total" in tx.columns:
+                base = tx.groupby(category_col)["item_total"].sum()
+            elif "total_spent" in tx.columns:
+                base = tx.groupby(category_col)["total_spent"].sum()
+            else:
+                base = tx.groupby(category_col).size()
+            total = float(base.sum())
+            if total > 0:
+                share = base / total * 100.0
+                category_share_df = share.reset_index()
+                category_share_df.columns = ["category", "share_pct"]
+
+        st.markdown("### Basket Composition")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Avg Basket Value", f"{avg_basket_value:.2f}")
+        m2.metric("Avg Items per Basket", f"{avg_items_per_basket:.2f}")
+        if category_share_df is not None and not category_share_df.empty:
+            top_row = category_share_df.sort_values("share_pct", ascending=False).iloc[0]
+            m3.metric(
+                "Top Category Share",
+                f"{top_row['share_pct']:.1f}%",
+                str(top_row["category"]),
+            )
+        else:
+            m3.metric("Category Breakdown", "N/A")
+            st.caption(
+                "Category breakdown requires category fields in simulation output or API response; "
+                "using SKU-level composition as a fallback."
+            )
+
+        if category_share_df is not None and not category_share_df.empty:
+            cat_chart = (
+                alt.Chart(category_share_df)
+                .mark_bar(color="#bd93f9")
+                .encode(
+                    y=alt.Y("category:N", sort="-x", title="Category"),
+                    x=alt.X("share_pct:Q", title="Basket share (%)"),
+                )
+                .properties(height=320)
+                .configure_view(fill="#282a36")
+                .configure_axis(
+                    labelColor="#f8f8f2",
+                    titleColor="#f8f8f2",
+                    gridColor="#44475a",
+                )
+            )
+            st.altair_chart(cat_chart, use_container_width=True)
+
+        # TODO: When wiring to FastAPI, expect 'category_share: dict',
+        # 'avg_basket_value: float', and 'avg_items_per_basket: float'
+        # in the simulation result payload so this section can use API data directly.
 
     runs = _get_runs_for_compare()
     tab_names = ["Overview", "Basket & SKUs", "Traffic & Heatmap", "Queue & Checkout"]

@@ -1,6 +1,7 @@
 #include "customer_behavior.h"
 #include "customer.h"
 #include "../environment/checkout_queue.h"
+#include "../environment/collision_manager.h"
 #include "../environment/environment.h"
 #include "../environment/navmesh_pathfinder.h"
 #include "../environment/physics.h"
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -21,12 +23,98 @@ namespace priceriot {
 
 namespace {
 constexpr bool kAgentLogEnabled = true;
+/// Behavioural personal space radius (m) for separation forces.
+constexpr double kPersonalSpaceRadius = 1.5;
+/// Extra multiplier applied to the averaged separation force.
+constexpr double kSeparationAmplify = 2.0;
+/// Time-to-live for cached navmesh paths in seconds.
+constexpr double kNavmeshPathCacheTtlSeconds = 2.5;
+
 struct NullLogStream {
     NullLogStream(const char *, std::ios_base::openmode) {}
     explicit operator bool() const { return false; }
     template <typename T> NullLogStream &operator<<(const T &) { return *this; }
 };
 using AgentLogStream = std::conditional_t<kAgentLogEnabled, std::ofstream, NullLogStream>;
+
+// Jitter generator for symmetry breaking in crowd flow.
+static std::mt19937 &jitterRng() {
+    static std::mt19937 rng(std::random_device{}());
+    return rng;
+}
+static std::uniform_real_distribution<double> &jitterDist() {
+    static std::uniform_real_distribution<double> dist(-0.1, 0.1);
+    return dist;
+}
+
+/**
+ * @brief Compute exponential separation force from nearby agents using the spatial hash.
+ *
+ * Uses inverse-square falloff: strength = (personal_space / distance)^2.
+ * Forces from all neighbors are averaged and then amplified.
+ *
+ * Only dynamic agents are considered; static obstacles are handled separately via PhysicsWorld.
+ */
+static void computeSeparationVector(const Customer &self,
+                                    const StoreGraph &store,
+                                    double &outX,
+                                    double &outZ) {
+    outX = 0.0;
+    outZ = 0.0;
+
+    // Spatial hash is owned by StoreGraph and rebuilt each tick by the simulator.
+    const SpatialHash &hash = store.getSpatialHash();
+
+    const double px = self.getPosX();
+    const double pz = self.getPosZ();
+
+    auto neighbors = hash.query(px, pz, kPersonalSpaceRadius);
+    if (neighbors.empty())
+        return;
+
+    double sumX = 0.0;
+    double sumZ = 0.0;
+    int count = 0;
+
+    for (Customer *other : neighbors) {
+        if (!other || other == &self)
+            continue;
+
+        const double ox = other->getPosX();
+        const double oz = other->getPosZ();
+        double dx = px - ox;
+        double dz = pz - oz;
+        double distSq = dx * dx + dz * dz;
+        if (distSq < 1e-6)
+            continue;
+
+        double dist = std::sqrt(distSq);
+        if (dist <= 0.0)
+            continue;
+
+        // Inverse-square repulsion.
+        double strength = (kPersonalSpaceRadius / dist);
+        strength *= strength;
+
+        dx /= dist;
+        dz /= dist;
+        sumX += dx * strength;
+        sumZ += dz * strength;
+        ++count;
+    }
+
+    if (count == 0)
+        return;
+
+    // Average then amplify.
+    sumX /= static_cast<double>(count);
+    sumZ /= static_cast<double>(count);
+    sumX *= kSeparationAmplify;
+    sumZ *= kSeparationAmplify;
+
+    outX = sumX;
+    outZ = sumZ;
+}
 
 // Helper: Snap waypoints out of obstacles
 // Iterates through the path. If a waypoint is invalid (inside an obstacle),
@@ -79,6 +167,86 @@ static void validateAndSnapPath(std::vector<std::pair<double, double>>& waypoint
             }
         }
     }
+}
+
+/**
+ * @brief Check static line-of-sight between two points using PhysicsWorld.
+ *
+ * Samples along the segment [a,b] at fixed intervals and returns false as
+ * soon as a sample enters an obstacle or boundary.
+ */
+static bool hasLineOfSight(const priceriot::StoreGraph &store,
+                           double ax, double az,
+                           double bx, double bz,
+                           double agentRadius) {
+    if (!store.hasPhysicsWorld())
+        return true;
+
+    const PhysicsWorld &pw = store.getPhysicsWorld();
+
+    double dx = bx - ax;
+    double dz = bz - az;
+    double dist = std::sqrt(dx * dx + dz * dz);
+    if (dist < 1e-6)
+        return true;
+
+    const double step = 0.25; // meters between samples
+    int steps = static_cast<int>(std::ceil(dist / step));
+    if (steps <= 1)
+        return true;
+
+    double stepX = dx / static_cast<double>(steps);
+    double stepZ = dz / static_cast<double>(steps);
+
+    // Skip the exact endpoints; they are assumed to be valid or already snapped.
+    for (int i = 1; i < steps; ++i) {
+        double sx = ax + stepX * static_cast<double>(i);
+        double sz = az + stepZ * static_cast<double>(i);
+        if (!pw.isValidPosition(sx, sz, agentRadius))
+            return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Aggressively reduce waypoints using static line-of-sight.
+ *
+ * Keeps only waypoints where a turn is necessary. Starting from the first
+ * waypoint, greedily jumps to the furthest later waypoint that is still
+ * visible without intersecting static obstacles.
+ */
+static void reduceWaypointsByLineOfSight(std::vector<std::pair<double, double>> &waypoints,
+                                         const priceriot::StoreGraph &store) {
+    if (waypoints.size() <= 2 || !store.hasPhysicsWorld())
+        return;
+
+    constexpr double kAgentRadius = 0.35;
+
+    std::vector<std::pair<double, double>> reduced;
+    reduced.reserve(waypoints.size());
+
+    std::size_t current = 0;
+    reduced.push_back(waypoints[current]);
+
+    while (current + 1 < waypoints.size()) {
+        std::size_t next = current + 1;
+
+        // Find furthest reachable waypoint with static LOS from current.
+        for (std::size_t j = waypoints.size() - 1; j > current + 1; --j) {
+            if (hasLineOfSight(store,
+                               waypoints[current].first, waypoints[current].second,
+                               waypoints[j].first,      waypoints[j].second,
+                               kAgentRadius)) {
+                next = j;
+                break;
+            }
+        }
+
+        reduced.push_back(waypoints[next]);
+        current = next;
+    }
+
+    waypoints.swap(reduced);
 }
 }
 
@@ -437,25 +605,76 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 return {Decision::Move};
             }
         } else {
-            // Move toward waypoint with velocity-based movement
+            // Move toward waypoint using blended global path + local separation steering
             double moveDist = c.speed * ctx.dt;
 
-            // Normalize direction
+            // Normalize global path direction
             double dirX = (dist > 1e-6) ? dx / dist : 0.0;
             double dirZ = (dist > 1e-6) ? dz / dist : 0.0;
 
-            // Don't overshoot waypoint
-            if (moveDist > dist) {
+            if (moveDist > dist)
                 moveDist = dist;
+
+            // Local steering from nearby agents via spatial hash (dynamic obstacles only)
+            double sepX = 0.0;
+            double sepZ = 0.0;
+            computeSeparationVector(c, ctx.store, sepX, sepZ);
+
+            // Blend global path and local steering.
+            double velX = dirX;
+            double velZ = dirZ;
+            if (sepX != 0.0 || sepZ != 0.0) {
+                velX = dirX * 0.7 + sepX * 0.3;
+                velZ = dirZ * 0.7 + sepZ * 0.3;
             }
 
-            double moveX = dirX * moveDist;
-            double moveZ = dirZ * moveDist;
+            // Symmetry-breaking jitter
+            double jx = jitterDist()(jitterRng());
+            double jz = jitterDist()(jitterRng());
+            velX += jx;
+            velZ += jz;
+
+            // Normalize final velocity direction to keep speed bounded
+            double vMag = std::sqrt(velX * velX + velZ * velZ);
+            if (vMag > 1e-6) {
+                velX /= vMag;
+                velZ /= vMag;
+            } else {
+                velX = dirX;
+                velZ = dirZ;
+            }
+
+            double moveX = velX * moveDist;
+            double moveZ = velZ * moveDist;
 
             // Check if new position would be valid (obstacle check)
             double newX = c.posX + moveX;
             double newZ = c.posZ + moveZ;
-            double agentRadius = 0.35;
+
+            // If stepping would collide with another agent, take a smaller step
+            const double agentRadius = 0.35;
+            bool wouldCollide = false;
+            if (ctx.collisionManager &&
+                ctx.collisionManager->wouldCollideWithAgents(newX, newZ, agentRadius, &c)) {
+                wouldCollide = true;
+                moveX *= 0.5;
+                moveZ *= 0.5;
+                newX = c.posX + moveX;
+                newZ = c.posZ + moveZ;
+            }
+
+            // #region agent log
+            if (ctx.collisionManager && (c.getId() % 25 == 0)) {
+                const char *logPath = std::getenv("PRICERIOT_DEBUG_LOG");
+                if (!logPath || !logPath[0]) logPath = "C:/Users/krist/Projects/PriceRiot/debug-01e413.log";
+                std::ofstream lf(logPath, std::ios::app);
+                if (lf) {
+                    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                    const double sepMag = std::sqrt(sepX * sepX + sepZ * sepZ);
+                    lf << "{\"sessionId\":\"01e413\",\"hypothesisId\":\"H2\",\"location\":\"customer_behavior.cpp:navmesh_avoid\",\"message\":\"avoidance and collide check\",\"data\":{\"customerId\":" << c.getId() << ",\"sepMag\":" << sepMag << ",\"wouldCollide\":" << (wouldCollide ? "true" : "false") << "},\"timestamp\":" << ts << "}\n";
+                }
+            }
+            // #endregion
 
             if (ctx.store.hasPhysicsWorld()) {
                 const PhysicsWorld &physics = ctx.store.getPhysicsWorld();
@@ -768,7 +987,12 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 if (ctx.store.edgeAt(i).getFromNode() != currentNode)
                     continue;
                 int toNodeIdx = ctx.store.edgeAt(i).getToNode();
-                Node::NodeType toType = ctx.store.nodeAt(toNodeIdx).getNodeType();
+                const Node &toNode = ctx.store.nodeAt(toNodeIdx);
+                Node::NodeType toType = toNode.getNodeType();
+                // Respect node occupancy limits: avoid edges leading into full junctions/registers.
+                if (!toNode.canEnter(c.getId())) {
+                    continue;
+                }
                 // BUG FIX: Skip edges leading to Register or Exit when Browsing
                 if (toType == Node::NodeType::Register || toType == Node::NodeType::Exit) {
                     // #region agent log
@@ -844,6 +1068,19 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             double endX = targetNode.getX();
             double endZ = targetNode.getZ();
 
+            // Path caching: if we already have a recent path to (endX,endZ), reuse it.
+            {
+                const double dxg = endX - c.getCachedGoal().first;
+                const double dzg = endZ - c.getCachedGoal().second;
+                const double goalDiffSq = dxg * dxg + dzg * dzg;
+                constexpr double kGoalEpsSq = 0.25; // 0.5 m
+                if (c.isUsingNavmesh() && !c.getNavmeshPath().empty() && c.hasCachedGoal() &&
+                    goalDiffSq < kGoalEpsSq &&
+                    c.getNavmeshPathAge() < kNavmeshPathCacheTtlSeconds) {
+                    return {Decision::Move};
+                }
+            }
+
             // Find navmesh path
             auto path =
                 NavMeshPathfinder::findPath(ctx.store.getNavMesh(), startX, startZ, endX, endZ);
@@ -855,12 +1092,15 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     waypoints.emplace_back(point.x, point.z);
                 }
 
+                // --- Aggressive LOS-based waypoint reduction then snap out of obstacles ---
+                reduceWaypointsByLineOfSight(waypoints, ctx.store);
                 // --- VALIDATE AND SNAP PATH ---
                 validateAndSnapPath(waypoints, ctx.store);
                 // ------------------------------
 
                 c.setNavmeshPath(waypoints);
                 c.setUsingNavmesh(true);
+                c.setCachedGoal(endX, endZ);
 
                 // #region debug log
                 if (ctx.store.hasPhysicsWorld()) {
@@ -1108,7 +1348,7 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 }
                 if (state == Exiting)
                     return {Decision::Despawn};
-                if (state == MissionBrowse && missionTargetEdgeIdx >= 0) {
+        if (state == MissionBrowse && missionTargetEdgeIdx >= 0) {
                     int sku = missionSkus[missionIndex];
                     missionTargetEdgeIdx = missionTargetCellIdx = -1;
                     ++missionIndex;
@@ -1121,12 +1361,53 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             }
         } else {
             double moveDist = std::min(c.speed * ctx.dt, dist);
-            double dirX = (dist > 1e-6) ? dx / dist : 0.0, dirZ = (dist > 1e-6) ? dz / dist : 0.0;
-            double newX = c.posX + dirX * moveDist, newZ = c.posZ + dirZ * moveDist;
+            double dirX = (dist > 1e-6) ? dx / dist : 0.0;
+            double dirZ = (dist > 1e-6) ? dz / dist : 0.0;
+
+            // Local steering from nearby agents via spatial hash
+            double sepX = 0.0;
+            double sepZ = 0.0;
+            computeSeparationVector(c, ctx.store, sepX, sepZ);
+
+            double velX = dirX;
+            double velZ = dirZ;
+            if (sepX != 0.0 || sepZ != 0.0) {
+                velX = dirX * 0.7 + sepX * 0.3;
+                velZ = dirZ * 0.7 + sepZ * 0.3;
+            }
+
+            double jx = jitterDist()(jitterRng());
+            double jz = jitterDist()(jitterRng());
+            velX += jx;
+            velZ += jz;
+
+            double vMag = std::sqrt(velX * velX + velZ * velZ);
+            if (vMag > 1e-6) {
+                velX /= vMag;
+                velZ /= vMag;
+            } else {
+                velX = dirX;
+                velZ = dirZ;
+            }
+
+            double moveX = velX * moveDist;
+            double moveZ = velZ * moveDist;
+
+            double newX = c.posX + moveX;
+            double newZ = c.posZ + moveZ;
+            const double agentRadius = 0.35;
+            if (ctx.collisionManager &&
+                ctx.collisionManager->wouldCollideWithAgents(newX, newZ, agentRadius, &c)) {
+                moveX *= 0.5;
+                moveZ *= 0.5;
+                newX = c.posX + moveX;
+                newZ = c.posZ + moveZ;
+            }
+
             if (ctx.store.hasPhysicsWorld() &&
                 !ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35)) {
-                newX = c.posX + dirX * moveDist * 0.5;
-                newZ = c.posZ + dirZ * moveDist * 0.5;
+                newX = c.posX + moveX * 0.5;
+                newZ = c.posZ + moveZ * 0.5;
                 if (!ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35)) {
                     c.setNavmeshPath({});
                     c.setUsingNavmesh(false);
@@ -1194,12 +1475,15 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 for (const auto &p : path)
                     waypoints.emplace_back(p.x, p.z);
 
+                // --- Aggressive LOS-based waypoint reduction then snap out of obstacles ---
+                reduceWaypointsByLineOfSight(waypoints, ctx.store);
                 // --- VALIDATE AND SNAP PATH ---
                 validateAndSnapPath(waypoints, ctx.store);
                 // ------------------------------
 
                 c.setNavmeshPath(waypoints);
                 c.setUsingNavmesh(true);
+                c.setCachedGoal(tx, tz);
                 // #region debug log
                 if (ctx.store.hasPhysicsWorld()) {
                     const PhysicsWorld &pw = ctx.store.getPhysicsWorld();
@@ -1317,12 +1601,15 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     for (const auto &p : path)
                         waypoints.emplace_back(p.x, p.z);
 
+                    // --- Aggressive LOS-based waypoint reduction then snap out of obstacles ---
+                    reduceWaypointsByLineOfSight(waypoints, ctx.store);
                     // --- VALIDATE AND SNAP PATH ---
                     validateAndSnapPath(waypoints, ctx.store);
                     // ------------------------------
 
                     c.setNavmeshPath(waypoints);
                     c.setUsingNavmesh(true);
+                    c.setCachedGoal(tn.getX(), tn.getZ());
                     // #region debug log
                     if (ctx.store.hasPhysicsWorld()) {
                         const PhysicsWorld &pw = ctx.store.getPhysicsWorld();

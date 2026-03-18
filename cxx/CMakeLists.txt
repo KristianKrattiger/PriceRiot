@@ -62,6 +62,7 @@ set(COMMON_SOURCES
         agents/basket.cpp
         agents/customer_behavior.cpp
         environment/environment.cpp
+        environment/spatial_hash.cpp
         environment/store_init.cpp
         tools/io_csv.cpp
         environment/store_inventory.cpp

@@ -25,6 +25,7 @@
 #include "navmesh.h"
 #include "physics.h"
 #include "products.h"
+#include "spatial_hash.h"
 
 namespace priceriot {
 
@@ -97,6 +98,20 @@ class Node {
     double getExitRate() const noexcept {
         return exitRate;
     }
+    int getMaxOccupancy() const noexcept {
+        return maxOccupancy;
+    }
+    int getOccupantCount() const noexcept {
+        return static_cast<int>(currentOccupants.size());
+    }
+    bool canEnter(int /*agentId*/) const noexcept {
+        return static_cast<int>(currentOccupants.size()) < maxOccupancy;
+    }
+
+    void setMaxOccupancy(int value) noexcept;
+    void registerOccupant(int agentId);
+    void unregisterOccupant(int agentId);
+    void clearOccupants() noexcept;
 
     void setNodeType(NodeType t) noexcept;
     void setBlockedFraction(double f) noexcept;
@@ -119,6 +134,8 @@ class Node {
     double serviceRate{};
     int agentsPresent{};
     const double entryRate{}, exitRate{};
+    int maxOccupancy{4};
+    std::vector<int> currentOccupants;
 };
 
 /**
@@ -316,6 +333,10 @@ class StoreGraph {
     const std::vector<std::unique_ptr<Node>> &getNodes() const noexcept {
         return nodes;
     }
+    /** Mutable node access for occupancy tracking and metrics. */
+    Node &mutableNodeAt(int idx) {
+        return *nodes.at(static_cast<size_t>(idx));
+    }
     const std::vector<std::unique_ptr<Edge>> &getEdges() const noexcept {
         return edges;
     }
@@ -375,6 +396,19 @@ class StoreGraph {
         return physicsWorldBuilt;
     }
 
+    /**
+     * @brief Spatial hash for crowd / nearby-agent queries.
+     *
+     * Rebuilt each simulation tick with current customer positions.
+     * Geometry is static; only agent pointers and positions change.
+     */
+    SpatialHash &getSpatialHash() noexcept {
+        return spatialHash_;
+    }
+    const SpatialHash &getSpatialHash() const noexcept {
+        return spatialHash_;
+    }
+
     priceriot::Products catalog;
 
   private:
@@ -390,6 +424,7 @@ class StoreGraph {
 
     PhysicsWorld physicsWorld;
     bool physicsWorldBuilt = false;
+    SpatialHash spatialHash_{};
 };
 
 } // namespace priceriot

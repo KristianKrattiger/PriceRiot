@@ -123,7 +123,7 @@ Node::Node()
     : nodeId(-1), type(Node::NodeType::Junction), x(0.0), z(0.0), length(0.0), width(0.0),
       shelfProtrusion_left(0.0), shelfProtrusion_right(0.0), blockedFraction(0.0),
       PersonalSpaceArea(0.0), jamDensity(0.0), avgDwellTime(0.0), serviceRate(0.0),
-      agentsPresent(0), entryRate(0.0), exitRate(0.0) {}
+      agentsPresent(0), entryRate(0.0), exitRate(0.0), maxOccupancy(4), currentOccupants() {}
 
 Node::Node(int nodeId_, NodeType type_, double x_, double z_,
            double length_, double width_, double shelfProtrusion_left_,
@@ -136,7 +136,8 @@ Node::Node(int nodeId_, NodeType type_, double x_, double z_,
       blockedFraction(std::clamp(blockedFraction_, 0.0, 1.0)),
       PersonalSpaceArea(personalSpaceArea_), jamDensity(std::max(0.0, jamDensity_)),
       avgDwellTime(std::max(0.0, avgDwellTime_)), serviceRate(std::max(0.0, serviceRate_)),
-      agentsPresent(std::max(0, agentsPresent_)), entryRate(entryRate_), exitRate(exitRate_) {}
+      agentsPresent(std::max(0, agentsPresent_)), entryRate(entryRate_), exitRate(exitRate_),
+      maxOccupancy(4), currentOccupants() {}
 
 void Node::setNodeType(Node::NodeType t) noexcept {
     type = t;
@@ -158,6 +159,28 @@ void Node::setServiceRate(double r) noexcept {
 }
 void Node::setAgentsPresent(int n) noexcept {
     agentsPresent = (n < 0) ? 0 : n;
+}
+
+void Node::setMaxOccupancy(int value) noexcept {
+    maxOccupancy = (value <= 0) ? 1 : value;
+}
+
+void Node::registerOccupant(int agentId) {
+    if (!canEnter(agentId))
+        return;
+    if (std::find(currentOccupants.begin(), currentOccupants.end(), agentId) ==
+        currentOccupants.end()) {
+        currentOccupants.push_back(agentId);
+    }
+}
+
+void Node::unregisterOccupant(int agentId) {
+    auto it = std::remove(currentOccupants.begin(), currentOccupants.end(), agentId);
+    currentOccupants.erase(it, currentOccupants.end());
+}
+
+void Node::clearOccupants() noexcept {
+    currentOccupants.clear();
 }
 
 // --- Section: Edge policy and StoreGraph YAML loading ---

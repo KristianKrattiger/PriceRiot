@@ -70,7 +70,8 @@ struct Agent {
 
     /** Tick the agent. Returns false when the agent should be despawned. */
     bool update(float dt, const StoreGraph &store,
-                CheckoutQueueManager *queueManager = nullptr);
+                CheckoutQueueManager *queueManager = nullptr,
+                CollisionManager *collisionManager = nullptr);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

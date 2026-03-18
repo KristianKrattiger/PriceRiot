@@ -51,12 +51,21 @@ void Customer::setBehavior(ICustomerBehavior *behavior) noexcept {
 
 // --- MAIN UPDATE LOGIC ---
 bool Customer::update(const float dt, const StoreGraph &store, const Basket &basket,
-                      CheckoutQueueManager *queueManager) {
+                      CheckoutQueueManager *queueManager,
+                      CollisionManager *collisionManager) {
     if (!behavior)
         return true;
 
+    // Age any active navmesh path for caching / invalidation logic.
+    if (behaviorState.usingNavmesh && !behaviorState.navmeshPath.empty()) {
+        behaviorState.navmeshPathAgeSeconds += static_cast<double>(dt);
+    } else {
+        behaviorState.navmeshPathAgeSeconds = 0.0;
+    }
+
     // 1. Setup Context
     ICustomerBehaviorContext ctx{store, basket, (double)dt, queueManager};
+    ctx.collisionManager = collisionManager;
 
     // 2. Ask Strategy for Decision
     Decision dec = behavior->decide(*this, ctx);

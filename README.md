@@ -35,15 +35,18 @@ PriceRiot/
 │   │   └── CONFIGURATION.md     # store.yaml schema (nodes/edges/planogram/queues)
 │   ├── agents/                  # Customer/staff, behaviours, baskets
 │   ├── environment/             # StoreGraph, cells, shelves, navmesh, physics, queues
-│   ├── engine/                  # Simulator (headless) and SFML visualiser (sim.cpp)
+│   ├── engine/                  # Simulator (headless), SFML visualiser, navmesh debug tools
 │   ├── bindings/                # pybind11 module: simulation
-│   └── tools/                   # CSV utilities, misc tools
+│   └── tools/                   # CSV/utilities and support scripts
 ├── python/
 │   ├── analytics/               # run_simulation helpers, DataFrame converters
 │   ├── dashboard/               # Streamlit dashboard (simulation + POS analysis)
+│   ├── ingestion/               # CSV ingestion, cleaning, SKU mapping, parameter extraction
+│   ├── webapp/                  # FastAPI+frontend service for scenario comparison and storage
 │   ├── run_analysis.py          # CLI to run a sim and export CSVs
 │   ├── main.py                  # FastAPI API (POST /sim/run) over the simulation module
-│   └── data_processing.py       # Example CSV analytics on external datasets
+│   ├── simulate.py              # Thin wrapper around analytics.run_simulation for notebooks/scripts
+│   └── data_processing.py       # Example CSV analytics on external or historical datasets
 ├── notebooks/
 │   ├── basic_analysis.ipynb     # Transactions/customers + basket composition
 │   └── queues_and_heatmaps.ipynb# Queue metrics and traffic heatmaps
@@ -134,7 +137,7 @@ The module is tied to the Python version used at build time. If you have multipl
 
 ### CLI: run a sim and export CSVs
 
-`python/run_analysis.py` wraps a headless `simulation.Simulator` run and writes analytics-friendly CSVs.
+`python/run_analysis.py` wraps a headless `simulation.Simulator` run and writes analytics-friendly CSVs. It is also exposed as a module entry point.
 
 From the project root:
 
@@ -233,6 +236,45 @@ PYTHONPATH=build:python streamlit run python/dashboard/app.py
 ```
 
 The sidebar lets you switch between **Simulation** and **POS Analysis** modes, configure run parameters, and view charts and tables backed by the same analytics helpers.
+
+## Current status and roadmap
+
+### Completed
+
+- Core C++ simulation engine with customers, shelves, restocking, and transactions.
+- Real-time SFML/ImGui visualiser backed by the headless `Simulator`.
+- Python `simulation` module (pybind11) with access to transactions and customers.
+- Python analytics helpers (`python/analytics/`) returning pandas DataFrames.
+- Traffic heatmaps (per-edge, per-cell visit counts) and queue metrics (lengths over time).
+- Smoke/systemic tests for construction, stepping, invariants, and metric exposure.
+- Streamlit dashboard for simulation and POS analysis (`python/dashboard/`).
+- FastAPI-based API (`python/main.py`) and web app (`python/webapp/`) for remote runs and scenario comparison.
+- Ingestion pipeline (`python/ingestion/`) to clean external POS data and map SKUs into the simulation schema.
+
+### Planned
+
+- Multi-threaded simulation for larger scenarios.
+- ML models for churn prediction and demand forecasting tied to simulation outputs.
+- Layout and staffing optimisation loops powered by simulation outputs.
+- Optional streaming pipeline for real-time transaction feeds.
+
+## Future vision
+
+PriceRiot is both a portfolio project and a prototype for simulation-driven retail analytics. Potential applications include:
+
+- **Store layout optimisation** through A/B testing in simulation.
+- **Staffing optimisation** based on observed traffic and queue patterns.
+- **Inventory management** with demand forecasting and stockout analysis.
+- **Customer journey analysis** and conversion optimisation.
+- **Price elasticity testing** in controlled, repeatable environments.
+
+## Contributing
+
+This is a personal project, but suggestions and feedback are welcome.
+
+## License
+
+MIT License
 
 ## Configuration
 

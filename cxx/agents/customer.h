@@ -21,6 +21,7 @@ class ICustomerBehavior;
 struct ICustomerBehaviorContext;
 class StoreGraph;
 class CheckoutQueueManager;
+class CollisionManager;
 
 class Customer {
   public:
@@ -30,7 +31,8 @@ class Customer {
 
     // --- Core Logic ---
     bool update(float dt, const StoreGraph &store, const Basket &basket,
-                CheckoutQueueManager *queueManager = nullptr);
+                CheckoutQueueManager *queueManager = nullptr,
+                CollisionManager *collisionManager = nullptr);
 
     // --- Navigation State ---
     int currentEdgeIndex = -1;
@@ -208,6 +210,10 @@ class Customer {
     }
     void setUsingNavmesh(bool use) noexcept {
         behaviorState.usingNavmesh = use;
+        if (!use) {
+            behaviorState.navmeshPathAgeSeconds = 0.0;
+            behaviorState.navmeshHasCachedGoal = false;
+        }
     }
     const std::vector<std::pair<double, double>> &getNavmeshPath() const noexcept {
         return behaviorState.navmeshPath;
@@ -215,6 +221,7 @@ class Customer {
     void setNavmeshPath(const std::vector<std::pair<double, double>> &path) {
         behaviorState.navmeshPath = path;
         behaviorState.currentWaypointIndex = 0;
+        behaviorState.navmeshPathAgeSeconds = 0.0;
     }
     size_t getCurrentWaypointIndex() const noexcept {
         return behaviorState.currentWaypointIndex;
@@ -224,6 +231,31 @@ class Customer {
     }
     void incrementWaypointIndex() noexcept {
         behaviorState.currentWaypointIndex++;
+    }
+
+    // Navmesh path caching state
+    [[nodiscard]] double getNavmeshPathAge() const noexcept {
+        return behaviorState.navmeshPathAgeSeconds;
+    }
+    void incrementNavmeshPathAge(double dt) noexcept {
+        behaviorState.navmeshPathAgeSeconds += dt;
+    }
+    void resetNavmeshPathAge() noexcept {
+        behaviorState.navmeshPathAgeSeconds = 0.0;
+    }
+    [[nodiscard]] bool hasCachedGoal() const noexcept {
+        return behaviorState.navmeshHasCachedGoal;
+    }
+    [[nodiscard]] std::pair<double, double> getCachedGoal() const noexcept {
+        return {behaviorState.navmeshCachedGoalX, behaviorState.navmeshCachedGoalZ};
+    }
+    void setCachedGoal(double x, double z) noexcept {
+        behaviorState.navmeshCachedGoalX = x;
+        behaviorState.navmeshCachedGoalZ = z;
+        behaviorState.navmeshHasCachedGoal = true;
+    }
+    void clearCachedGoal() noexcept {
+        behaviorState.navmeshHasCachedGoal = false;
     }
 
     // Sideband interaction state
@@ -259,6 +291,10 @@ class Customer {
         std::vector<std::pair<double, double>> navmeshPath; // Waypoints (x, z)
         size_t currentWaypointIndex = 0;
         bool usingNavmesh = false;
+        double navmeshPathAgeSeconds = 0.0;
+        double navmeshCachedGoalX = 0.0;
+        double navmeshCachedGoalZ = 0.0;
+        bool navmeshHasCachedGoal = false;
 
         // Queue state (for checkout)
         int queueLaneId = -1;

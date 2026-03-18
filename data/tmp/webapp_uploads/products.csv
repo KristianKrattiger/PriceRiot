@@ -1,0 +1,25 @@
+sku,name,category,price,popularity
+1,Smartphone,Electronics,699.99,0.8
+2,Laptop,Electronics,1099.99,0.7
+3,Refrigerator,Appliances,499.99,0.5
+4,Microwave,Appliances,149.99,0.6
+5,The Great Gatsby,Books,9.99,0.4
+6,1984,Books,14.99,0.5
+7,T-shirt,Clothing,19.99,0.7
+8,Jeans,Clothing,39.99,0.6
+9,Building Blocks,Toys,29.99,0.5
+10,Action Figure,Toys,19.99,0.6
+11,Chuckwagon Beans,Cowboy_Food,2.99,0.6
+12,Campfire Chili,Cowboy_Food,3.99,0.5
+13,Smoky BBQ Sauce,Cowboy_Food,4.49,0.7
+14,Trail Beef Jerky,Cowboy_Food,5.99,0.8
+15,Cornbread Mix,Cowboy_Food,3.49,0.5
+16,Campfire Coffee,Cowboy_Food,7.99,0.4
+17,Lasso Rope,Ranch_Supplies,14.99,0.6
+18,Horse Feed Sack,Ranch_Supplies,19.99,0.4
+19,Saddle Oil,Ranch_Supplies,9.99,0.5
+20,Work Gloves,Ranch_Supplies,6.99,0.7
+21,Cowboy Hat,Western_Apparel,24.99,0.7
+22,Cowboy Boots,Western_Apparel,79.99,0.6
+23,Red Bandana,Western_Apparel,4.99,0.5
+24,Flannel Shirt,Western_Apparel,29.99,0.5
