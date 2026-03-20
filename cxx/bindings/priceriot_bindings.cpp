@@ -57,6 +57,8 @@
 #include "../engine/simulator.h"
 #include "../agents/customer.h"
 #include "../engine/transaction.h"
+#include "../agents/task.h"
+#include "../agents/worker.h"
 
 namespace py = pybind11;
 using namespace priceriot;
@@ -110,6 +112,27 @@ PYBIND11_MODULE(simulation, m) {
         "PriceRiot retail simulation engine.\n\n"
         "Provides a headless Simulator that runs the full agent-based retail "
         "store model and returns Transaction and Customer analytics data.";
+
+    // ─── TaskType / Task ─────────────────────────────────────────────────────
+    py::enum_<TaskType>(m, "TaskType",
+        "Type of staff task workers can execute.")
+        .value("StockShelves",    TaskType::StockShelves)
+        .value("ProcessRegister", TaskType::ProcessRegister)
+        .value("AssistCustomer",  TaskType::AssistCustomer)
+        .export_values();
+
+    py::class_<Task>(m, "Task",
+        "A single unit of staff work, such as stocking shelves or processing a register lane.")
+        .def_readonly("id",        &Task::id,
+                      "Unique task identifier (int).")
+        .def_readonly("type",      &Task::type,
+                      "TaskType enum.")
+        .def_readonly("priority",  &Task::priority,
+                      "Relative priority; higher values are scheduled first.")
+        .def_readonly("target_id", &Task::targetId,
+                      "Target lane / shelf / customer identifier.")
+        .def_readonly("created_at",&Task::createdAt,
+                      "Sim-time at which the task was enqueued (seconds).");
 
     // ─── TripPurpose enum ─────────────────────────────────────────────────────
     py::enum_<Customer::TripPurpose>(m, "TripPurpose",
@@ -370,6 +393,32 @@ PYBIND11_MODULE(simulation, m) {
              "Return queue lengths per lane at each sampled time.\n\n"
              "Outer index is lane index in [0, getLaneCount()-1], inner index "
              "is sample index aligned with get_queue_sample_times().\n")
+
+        // ── Workers / tasks ───────────────────────────────────────────────────
+        .def("get_workers", [](const Simulator &s) {
+            py::list out;
+            auto snaps = s.getWorkerSnapshots();
+            for (const auto &ws : snaps) {
+                py::dict d;
+                d["id"]              = ws.id;
+                d["pos_x"]           = ws.posX;
+                d["pos_z"]           = ws.posZ;
+                d["can_stock"]       = ws.canStock;
+                d["can_serve"]       = ws.canServe;
+                d["happiness"]       = ws.happiness;
+                d["task_efficiency"] = ws.taskEfficiency;
+                if (ws.hasTask) {
+                    py::dict td;
+                    td["type"]      = ws.taskType;
+                    td["target_id"] = ws.taskTargetId;
+                    d["current_task"] = td;
+                } else {
+                    d["current_task"] = py::none();
+                }
+                out.append(std::move(d));
+            }
+            return out;
+        }, "Return a list of dicts describing current workers and their tasks.")
 
         .def("__repr__", &simulatorRepr);
 }

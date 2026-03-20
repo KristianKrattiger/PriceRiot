@@ -57,10 +57,12 @@ set(COMMON_SOURCES
         environment/products.cpp
         environment/shelf.cpp
         agents/customer.cpp
+        agents/worker.cpp
         environment/cell.cpp
         engine/transaction.cpp
         agents/basket.cpp
         agents/customer_behavior.cpp
+        engine/task_manager.cpp
         environment/environment.cpp
         environment/spatial_hash.cpp
         environment/store_init.cpp

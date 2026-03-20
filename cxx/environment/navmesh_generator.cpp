@@ -182,8 +182,12 @@ NavMeshGenerator::getEdgeWalkableCorners(const EdgeGeometry &geom, double clearW
     double perpX = std::cos(perpAngle);
     double perpZ = std::sin(perpAngle);
 
-    // Half width of walkable area
-    double halfWidth = clearWidth / 2.0;
+    // Erode walkable corridor by agent radius so the polygon boundary represents
+    // valid positions for the agent's CENTER, not the physical shelf face.
+    // Without erosion an agent whose centre is at the polygon edge would have their
+    // body (radius 0.35 m) overlapping the shelf.
+    static constexpr double kAgentErosion = 0.35;
+    double halfWidth = std::max(kAgentErosion * 0.5, clearWidth / 2.0 - kAgentErosion);
 
     // Calculate offset
     double offsetX = perpX * halfWidth;

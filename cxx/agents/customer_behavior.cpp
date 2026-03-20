@@ -24,9 +24,10 @@ namespace priceriot {
 namespace {
 constexpr bool kAgentLogEnabled = true;
 /// Behavioural personal space radius (m) for separation forces.
-constexpr double kPersonalSpaceRadius = 1.5;
+/// Kept tight so the avoidance bubble isn't visible at normal walking distances.
+constexpr double kPersonalSpaceRadius = 0.9;
 /// Extra multiplier applied to the averaged separation force.
-constexpr double kSeparationAmplify = 2.0;
+constexpr double kSeparationAmplify = 1.5;
 /// Time-to-live for cached navmesh paths in seconds.
 constexpr double kNavmeshPathCacheTtlSeconds = 2.5;
 
@@ -92,9 +93,12 @@ static void computeSeparationVector(const Customer &self,
         if (dist <= 0.0)
             continue;
 
-        // Inverse-square repulsion.
-        double strength = (kPersonalSpaceRadius / dist);
-        strength *= strength;
+        // Quartic falloff: (1 - dist/R)^4
+        // Zero at the boundary, ramps up sharply only when agents are truly close.
+        // This makes the personal-space edge invisible — there's no sudden jump.
+        double t = dist / kPersonalSpaceRadius;
+        double one_mt = 1.0 - t;
+        double strength = one_mt * one_mt * one_mt * one_mt;
 
         dx /= dist;
         dz /= dist;
@@ -167,6 +171,74 @@ static void validateAndSnapPath(std::vector<std::pair<double, double>>& waypoint
             }
         }
     }
+
+    // Second pass: push waypoints that are too close to obstacles away from them.
+    // The funnel places waypoints at portal edges (corridor corners near shelf ends).
+    // Nudging them into clearer corridor space prevents path segments from clipping shelves.
+    const double safeRadius = radius + 0.12;
+    for (size_t i = 1; i + 1 < waypoints.size(); ++i) { // skip start and final goal
+        Circle wpCircle(waypoints[i].first, waypoints[i].second, safeRadius);
+        if (pw.checkCollision(wpCircle)) {
+            pw.resolveCollision(wpCircle);
+            waypoints[i].first = wpCircle.x;
+            waypoints[i].second = wpCircle.z;
+        }
+    }
+}
+
+/**
+ * @brief Pull corner waypoints toward the inner bisector of each turn.
+ *
+ * The funnel algorithm places corner waypoints at tight portal edges near
+ * shelf ends. Pulling them toward the corridor centre reduces the chance an
+ * agent clips the shelf when approaching from a deflected position.
+ */
+static void smoothCornerWaypoints(std::vector<std::pair<double, double>> &waypoints,
+                                   const priceriot::StoreGraph &store) {
+    if (waypoints.size() < 3 || !store.hasPhysicsWorld())
+        return;
+    const PhysicsWorld &pw = store.getPhysicsWorld();
+    constexpr double kAgentRadius = 0.35;
+    constexpr double kMaxPull = 0.5; // metres — cap so we don't overshoot corridor centre
+
+    for (size_t i = 1; i + 1 < waypoints.size(); ++i) {
+        double ax = waypoints[i - 1].first,  az = waypoints[i - 1].second;
+        double bx = waypoints[i].first,      bz = waypoints[i].second;
+        double cx = waypoints[i + 1].first,  cz = waypoints[i + 1].second;
+
+        // Incoming direction (a→b) and outgoing direction (b→c)
+        double inX = bx - ax, inZ = bz - az;
+        double inLen = std::sqrt(inX * inX + inZ * inZ);
+        double outX = cx - bx, outZ = cz - bz;
+        double outLen = std::sqrt(outX * outX + outZ * outZ);
+        if (inLen < 1e-6 || outLen < 1e-6)
+            continue;
+
+        inX /= inLen;  inZ /= inLen;
+        outX /= outLen; outZ /= outLen;
+
+        double dot = inX * outX + inZ * outZ; // 1 = straight, -1 = U-turn
+        if (dot > 0.98)
+            continue; // Nearly straight — nothing to smooth
+
+        // Bisector direction pointing toward the inside of the turn
+        double bisX = inX + outX, bisZ = inZ + outZ;
+        double bisLen = std::sqrt(bisX * bisX + bisZ * bisZ);
+        if (bisLen < 1e-6)
+            continue;
+        bisX /= bisLen; bisZ /= bisLen;
+
+        // Pull distance scales with sharpness of the turn: max pull at 90°, zero at straight
+        double pullDist = std::min(kMaxPull, (1.0 - dot) * 0.4);
+
+        double nx = bx + bisX * pullDist;
+        double nz = bz + bisZ * pullDist;
+
+        if (pw.isValidPosition(nx, nz, kAgentRadius)) {
+            waypoints[i].first  = nx;
+            waypoints[i].second = nz;
+        }
+    }
 }
 
 /**
@@ -190,7 +262,7 @@ static bool hasLineOfSight(const priceriot::StoreGraph &store,
     if (dist < 1e-6)
         return true;
 
-    const double step = 0.25; // meters between samples
+    const double step = 0.1; // meters between samples — fine enough to catch narrow shelf protrusions
     int steps = static_cast<int>(std::ceil(dist / step));
     if (steps <= 1)
         return true;
@@ -199,10 +271,13 @@ static bool hasLineOfSight(const priceriot::StoreGraph &store,
     double stepZ = dz / static_cast<double>(steps);
 
     // Skip the exact endpoints; they are assumed to be valid or already snapped.
+    // Use a slightly padded radius so paths don't clip shelf corners even when
+    // the funnel places a waypoint just barely inside the clear corridor.
+    const double checkRadius = agentRadius + 0.05;
     for (int i = 1; i < steps; ++i) {
         double sx = ax + stepX * static_cast<double>(i);
         double sz = az + stepZ * static_cast<double>(i);
-        if (!pw.isValidPosition(sx, sz, agentRadius))
+        if (!pw.isValidPosition(sx, sz, checkRadius))
             return false;
     }
     return true;
@@ -411,11 +486,11 @@ static bool chooseInteractionSide(const priceriot::EdgeCell &cell) {
 
 Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ctx) {
     // #region agent log
-    { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:decide_entry\",\"message\":\"decide() called\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"edgeIdx\":" << c.currentEdgeIndex << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << ",\"pathSize\":" << c.getNavmeshPath().size() << ",\"waypointIdx\":" << c.getCurrentWaypointIndex() << ",\"dwellTicks\":" << c.getDwellTicks() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+    { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:decide_entry\",\"message\":\"decide() called\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"edgeIdx\":" << c.getCurrentEdgeIndex() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << ",\"pathSize\":" << c.getNavmeshPath().size() << ",\"waypointIdx\":" << c.getCurrentWaypointIndex() << ",\"dwellTicks\":" << c.getDwellTicks() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
     // #endregion
     if (c.getDwellTicks() > 0)
         return {Decision::Wait};
-    if (c.currentEdgeIndex == -1) {
+    if (c.getCurrentEdgeIndex() == -1) {
         // #region agent log
         { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer_behavior.cpp:161\",\"message\":\"DESPAWN: edgeIndex==-1\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\"},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
         // #endregion
@@ -439,8 +514,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         if (idx < 0)
             return false;
         const auto &exitNode = ctx.store.nodeAt(idx);
-        const double dx = c.posX - exitNode.getX();
-        const double dz = c.posZ - exitNode.getZ();
+        const double dx = c.getPosX() - exitNode.getX();
+        const double dz = c.getPosZ() - exitNode.getZ();
         return (dx * dx + dz * dz) <= (GOAL_RADIUS * GOAL_RADIUS);
     };
 
@@ -457,8 +532,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
 
     // InQueue walking: move toward queue waypoint position
     if (state == InQueue && c.isWalkingToQueuePos()) {
-        double dx = c.getQueueTargetX() - c.posX;
-        double dz = c.getQueueTargetZ() - c.posZ;
+        double dx = c.getQueueTargetX() - c.getPosX();
+        double dz = c.getQueueTargetZ() - c.getPosZ();
         double dist = std::sqrt(dx * dx + dz * dz);
 
         if (dist < 0.3) { // Arrived at waypoint
@@ -466,7 +541,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             c.setWalkingToQueuePos(false);
             // If at front of queue, start service timer
             if (ctx.queueManager && ctx.queueManager->isAtFront(c.getQueueLaneId(), c.getId())) {
-                const auto &regNode = ctx.store.nodeAt(ctx.store.edgeAt(c.currentEdgeIndex).getToNode());
+                const auto &regNode = ctx.store.nodeAt(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode());
                 double rate = regNode.getServiceRate();
                 int serviceTicks = (rate > 0.01) ? static_cast<int>((1.0 / rate) * 60.0) : 300;
                 c.setDwellTicks(serviceTicks);
@@ -477,10 +552,10 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         }
 
         // Walk toward target
-        double walkSpeed = c.speed * ctx.dt;
+        double walkSpeed = c.getSpeed() * ctx.dt;
         double dirX = dx / dist;
         double dirZ = dz / dist;
-        c.setPosition(c.posX + dirX * walkSpeed, c.posZ + dirZ * walkSpeed);
+        c.setPosition(c.getPosX() + dirX * walkSpeed, c.getPosZ() + dirZ * walkSpeed);
         return {Decision::Move};
     }
 
@@ -492,8 +567,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         c.getCurrentWaypointIndex() < c.getNavmeshPath().size()) {
         // Get current waypoint
         const auto &waypoint = c.getNavmeshPath()[c.getCurrentWaypointIndex()];
-        double dx = waypoint.first - c.posX;
-        double dz = waypoint.second - c.posZ;
+        double dx = waypoint.first - c.getPosX();
+        double dz = waypoint.second - c.getPosZ();
         double dist = std::sqrt(dx * dx + dz * dz);
 
         size_t pathSize = c.getNavmeshPath().size();
@@ -502,14 +577,30 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         double reachRadius = isLastWaypoint
                                  ? GOAL_RADIUS
                                  : std::max(WAYPOINT_THRESHOLD_MIN,
-                                            c.speed * ctx.dt * WAYPOINT_THRESHOLD_FRAME_FACTOR);
+                                            c.getSpeed() * ctx.dt * WAYPOINT_THRESHOLD_FRAME_FACTOR);
+
+        // If the current intermediate waypoint is no longer reachable in a straight line
+        // (e.g. agent was deflected into a shelf corner), skip to the next waypoint.
+        // This breaks the oscillation loop where the agent bounces back and forth at a corner.
+        if (!isLastWaypoint && dist > reachRadius && ctx.store.hasPhysicsWorld()) {
+            size_t nextIdx = c.getCurrentWaypointIndex() + 1;
+            if (nextIdx < c.getNavmeshPath().size()) {
+                const auto &nextWp = c.getNavmeshPath()[nextIdx];
+                bool losToNext = hasLineOfSight(ctx.store, c.getPosX(), c.getPosZ(),
+                                                nextWp.first, nextWp.second, 0.35);
+                bool losToThis = hasLineOfSight(ctx.store, c.getPosX(), c.getPosZ(),
+                                                waypoint.first, waypoint.second, 0.35);
+                if (!losToThis && losToNext)
+                    c.incrementWaypointIndex();
+            }
+        }
 
         // If reached waypoint, move to next
         if (dist < reachRadius) {
             c.incrementWaypointIndex();
             if (c.getCurrentWaypointIndex() >= c.getNavmeshPath().size()) {
                 // #region agent log
-                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:186\",\"message\":\"Navmesh path complete\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"edgeIdx\":" << c.currentEdgeIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:186\",\"message\":\"Navmesh path complete\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"edgeIdx\":" << c.getCurrentEdgeIndex() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
                 // #endregion
                 // Reached end of path, clear it
                 c.setNavmeshPath({});
@@ -517,7 +608,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 if (state == HeadingToCheckout) {
                     state = InQueue;
                     const auto &regNode =
-                        ctx.store.nodeAt(ctx.store.edgeAt(c.currentEdgeIndex).getToNode());
+                        ctx.store.nodeAt(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode());
                     double rate = regNode.getServiceRate();
                     int serviceTicks = (rate > 0.01) ? static_cast<int>((1.0 / rate) * 60.0) : 300;
                     c.setDwellTicks(serviceTicks);
@@ -530,13 +621,13 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 if (state == Exiting)
                     return {Decision::Despawn};
                 // #region agent log
-                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"customer_behavior.cpp:path_complete_fallthrough\",\"message\":\"Path complete but state not handled\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"edgeIdx\":" << c.currentEdgeIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"customer_behavior.cpp:path_complete_fallthrough\",\"message\":\"Path complete but state not handled\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"edgeIdx\":" << c.getCurrentEdgeIndex() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
                 // #endregion
                 // FIX: When navmesh path completes in Browsing state, find the closest graph node
                 // and update currentEdgeIndex to an edge starting from that node
                 // IMPORTANT: For Browsing state, avoid routing toward Register/Exit - stay in shopping area
                 if (state == Browsing || state == Entering) {
-                    double px = c.posX, pz = c.posZ;
+                    double px = c.getPosX(), pz = c.getPosZ();
 
                     // For Browsing customers, find the best edge that keeps them in the shopping area
                     // (avoid edges leading to Register or Exit)
@@ -582,10 +673,10 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     }
 
                     if (bestEdgeIdx >= 0) {
-                        c.currentEdgeIndex = bestEdgeIdx;
+                        c.setCurrentEdgeIndex(bestEdgeIdx);
                         // FIX: Set distOnEdge to 0 to allow browsing through the edge cells
                         // Previously set to edgeLength which skipped all cell interactions
-                        c.distOnEdge = 0.0;
+                        c.setDistOnEdge(0.0);
                         // Sync position to edge start node for consistent cell positioning
                         const auto &fromNode = ctx.store.nodeAt(ctx.store.edgeAt(bestEdgeIdx).getFromNode());
                         c.setPosition(fromNode.getX(), fromNode.getZ());
@@ -606,7 +697,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             }
         } else {
             // Move toward waypoint using blended global path + local separation steering
-            double moveDist = c.speed * ctx.dt;
+            double moveDist = c.getSpeed() * ctx.dt;
 
             // Normalize global path direction
             double dirX = (dist > 1e-6) ? dx / dist : 0.0;
@@ -621,11 +712,16 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             computeSeparationVector(c, ctx.store, sepX, sepZ);
 
             // Blend global path and local steering.
+            // Weight scales with separation magnitude so distant agents cause no wobble.
             double velX = dirX;
             double velZ = dirZ;
-            if (sepX != 0.0 || sepZ != 0.0) {
-                velX = dirX * 0.7 + sepX * 0.3;
-                velZ = dirZ * 0.7 + sepZ * 0.3;
+            double sepMag = std::sqrt(sepX * sepX + sepZ * sepZ);
+            if (sepMag > 0.05) {
+                // Normalise sep direction, then blend proportionally (max 30%).
+                double invSepMag = 1.0 / sepMag;
+                double blendW = std::min(sepMag * 0.35, 0.30);
+                velX = dirX * (1.0 - blendW) + (sepX * invSepMag) * blendW;
+                velZ = dirZ * (1.0 - blendW) + (sepZ * invSepMag) * blendW;
             }
 
             // Symmetry-breaking jitter
@@ -648,8 +744,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             double moveZ = velZ * moveDist;
 
             // Check if new position would be valid (obstacle check)
-            double newX = c.posX + moveX;
-            double newZ = c.posZ + moveZ;
+            double newX = c.getPosX() + moveX;
+            double newZ = c.getPosZ() + moveZ;
 
             // If stepping would collide with another agent, take a smaller step
             const double agentRadius = 0.35;
@@ -659,8 +755,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 wouldCollide = true;
                 moveX *= 0.5;
                 moveZ *= 0.5;
-                newX = c.posX + moveX;
-                newZ = c.posZ + moveZ;
+                newX = c.getPosX() + moveX;
+                newZ = c.getPosZ() + moveZ;
             }
 
             // #region agent log
@@ -682,43 +778,59 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 // Check if position is valid
                 if (!physics.isValidPosition(newX, newZ, agentRadius)) {
                     // Try reduced movement (half speed)
-                    newX = c.posX + moveX * 0.5;
-                    newZ = c.posZ + moveZ * 0.5;
+                    newX = c.getPosX() + moveX * 0.5;
+                    newZ = c.getPosZ() + moveZ * 0.5;
                     if (!physics.isValidPosition(newX, newZ, agentRadius)) {
                         // Try perpendicular movement (slide along obstacle)
                         double perpX = -dirZ;
                         double perpZ = dirX;
-                        newX = c.posX + perpX * moveDist * 0.3;
-                        newZ = c.posZ + perpZ * moveDist * 0.3;
+                        newX = c.getPosX() + perpX * moveDist * 0.3;
+                        newZ = c.getPosZ() + perpZ * moveDist * 0.3;
                         if (!physics.isValidPosition(newX, newZ, agentRadius)) {
                             // Try opposite perpendicular
-                            newX = c.posX - perpX * moveDist * 0.3;
-                            newZ = c.posZ - perpZ * moveDist * 0.3;
+                            newX = c.getPosX() - perpX * moveDist * 0.3;
+                            newZ = c.getPosZ() - perpZ * moveDist * 0.3;
                             if (!physics.isValidPosition(newX, newZ, agentRadius)) {
                                 // Still blocked, try to push away from obstacle
-                                Circle agentCircle(c.posX, c.posZ, agentRadius);
+                                Circle agentCircle(c.getPosX(), c.getPosZ(), agentRadius);
                                 double normalX, normalZ, penetration;
                                 if (physics.getCollisionInfo(agentCircle, normalX, normalZ,
                                                              penetration)) {
                                     // Push away from obstacle
-                                    newX = c.posX + normalX * moveDist * 0.5;
-                                    newZ = c.posZ + normalZ * moveDist * 0.5;
+                                    newX = c.getPosX() + normalX * moveDist * 0.5;
+                                    newZ = c.getPosZ() + normalZ * moveDist * 0.5;
                                     if (!physics.isValidPosition(newX, newZ, agentRadius)) {
-                                        // Completely blocked; fall back to edge-based navigation.
+                                        // Completely blocked — snap the agent clearly away from
+                                        // the shelf using the collision normal, then clear the
+                                        // path but keep usingNavmesh=true so the cooldown check
+                                        // prevents an immediate bad recalculation.
                                         // #region debug log
-                                        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H5\",\"location\":\"customer_behavior.cpp:navmesh_blocked_fallback\",\"message\":\"Completely blocked, clear path\",\"data\":{\"customerId\":" << c.getId() << ",\"posX\":" << c.posX << ",\"posZ\":" << c.posZ << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+                                        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H5\",\"location\":\"customer_behavior.cpp:navmesh_blocked_fallback\",\"message\":\"Completely blocked, clear path\",\"data\":{\"customerId\":" << c.getId() << ",\"posX\":" << c.getPosX() << ",\"posZ\":" << c.getPosZ() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
                                         // #endregion
+                                        {
+                                            double snapX = c.getPosX() + normalX * (penetration + agentRadius * 0.5 + 0.1);
+                                            double snapZ = c.getPosZ() + normalZ * (penetration + agentRadius * 0.5 + 0.1);
+                                            if (physics.isValidPosition(snapX, snapZ, agentRadius))
+                                                c.setPosition(snapX, snapZ);
+                                        }
                                         c.setNavmeshPath({});
-                                        c.setUsingNavmesh(false);
+                                        // usingNavmesh stays true — cooldown fires for ~0.75 s.
                                         return {Decision::Move};
                                     }
                                 } else {
-                                    // No collision info; fall back to edge-based navigation.
+                                    // No collision info — generic snap then cooldown.
                                     // #region debug log
                                     { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H5\",\"location\":\"customer_behavior.cpp:navmesh_nocollinfo_fallback\",\"message\":\"No collision info, clear path\",\"data\":{\"customerId\":" << c.getId() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
                                     // #endregion
+                                    {
+                                        Circle snapCircle(c.getPosX(), c.getPosZ(), agentRadius);
+                                        if (physics.checkCollision(snapCircle)) {
+                                            physics.resolveCollision(snapCircle);
+                                            c.setPosition(snapCircle.x, snapCircle.z);
+                                        }
+                                    }
                                     c.setNavmeshPath({});
-                                    c.setUsingNavmesh(false);
+                                    // usingNavmesh stays true — cooldown fires for ~0.75 s.
                                     return {Decision::Move};
                                 }
                             }
@@ -731,7 +843,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             {
                 bool inObst = ctx.store.hasPhysicsWorld() && !ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, agentRadius);
                 std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
-                if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"customer_behavior.cpp:navmesh_move\",\"message\":\"Navmesh step toward waypoint\",\"data\":{\"customerId\":" << c.getId() << ",\"posBeforeX\":" << c.posX << ",\"posBeforeZ\":" << c.posZ << ",\"waypointX\":" << waypoint.first << ",\"waypointZ\":" << waypoint.second << ",\"newPosX\":" << newX << ",\"newPosZ\":" << newZ << ",\"inObstacleAfter\":" << (inObst ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+                if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"customer_behavior.cpp:navmesh_move\",\"message\":\"Navmesh step toward waypoint\",\"data\":{\"customerId\":" << c.getId() << ",\"posBeforeX\":" << c.getPosX() << ",\"posBeforeZ\":" << c.getPosZ() << ",\"waypointX\":" << waypoint.first << ",\"waypointZ\":" << waypoint.second << ",\"newPosX\":" << newX << ",\"newPosZ\":" << newZ << ",\"inObstacleAfter\":" << (inObst ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
             }
             // #endregion
 
@@ -739,17 +851,17 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             c.setPosition(newX, newZ);
 
             // Update distOnEdge for backward compatibility (approximate)
-            if (c.currentEdgeIndex >= 0) {
-                const auto &edge = ctx.store.edgeAt(c.currentEdgeIndex);
+            if (c.getCurrentEdgeIndex() >= 0) {
+                const auto &edge = ctx.store.edgeAt(c.getCurrentEdgeIndex());
                 // Approximate distance along edge based on position
-                c.distOnEdge = std::min(c.distOnEdge + moveDist, edge.getLength());
+                c.setDistOnEdge(std::min(c.getDistOnEdge() + moveDist, edge.getLength()));
             }
 
             return {Decision::Move};
         }
     }
 
-    const auto &currentEdge = ctx.store.edgeAt(c.currentEdgeIndex);
+    const auto &currentEdge = ctx.store.edgeAt(c.getCurrentEdgeIndex());
     const int currentNode = currentEdge.getToNode();
 
     // --- STATE MACHINE: SHOPPING ---
@@ -757,15 +869,15 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
     const bool fromEntrance =
         ctx.store.nodeAt(currentEdge.getFromNode()).getNodeType() == Node::NodeType::Entrance;
     // #region agent log
-    { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"customer_behavior.cpp:browsing_check\",\"message\":\"Browsing pick logic entry\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"fromEntrance\":" << (fromEntrance?"true":"false") << ",\"distOnEdge\":" << c.distOnEdge << ",\"edgeLength\":" << currentEdge.getLength() << ",\"cellCount\":" << currentEdge.getCellCount() << ",\"basketSize\":" << ctx.basket.getSize() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+    { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"customer_behavior.cpp:browsing_check\",\"message\":\"Browsing pick logic entry\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"fromEntrance\":" << (fromEntrance?"true":"false") << ",\"distOnEdge\":" << c.getDistOnEdge() << ",\"edgeLength\":" << currentEdge.getLength() << ",\"cellCount\":" << currentEdge.getCellCount() << ",\"basketSize\":" << ctx.basket.getSize() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
     // #endregion
     if (state == Browsing && !fromEntrance) {
         // Are we on an aisle with shelves?
         if (currentEdge.getCellCount() > 0 && ctx.basket.getSize() < 8) {
-            if (const int cellIdx = static_cast<int>(c.distOnEdge / currentEdge.getCellLength());
+            if (const int cellIdx = static_cast<int>(c.getDistOnEdge() / currentEdge.getCellLength());
                 cellIdx >= 0 && cellIdx < static_cast<int>(currentEdge.cells.size())) {
                 // #region agent log
-                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer_behavior.cpp:cell_calc\",\"message\":\"Cell index calculated\",\"data\":{\"customerId\":" << c.getId() << ",\"cellIdx\":" << cellIdx << ",\"cellCount\":" << currentEdge.getCellCount() << ",\"distOnEdge\":" << c.distOnEdge << ",\"cellLength\":" << currentEdge.getCellLength() << ",\"lastShopCell\":" << c.getLastShopCell() << ",\"lastPickAttemptCell\":" << c.getLastPickAttemptCell() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer_behavior.cpp:cell_calc\",\"message\":\"Cell index calculated\",\"data\":{\"customerId\":" << c.getId() << ",\"cellIdx\":" << cellIdx << ",\"cellCount\":" << currentEdge.getCellCount() << ",\"distOnEdge\":" << c.getDistOnEdge() << ",\"cellLength\":" << currentEdge.getCellLength() << ",\"lastShopCell\":" << c.getLastShopCell() << ",\"lastPickAttemptCell\":" << c.getLastPickAttemptCell() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
                 // #endregion
                 // New cell - dwell to simulate browsing
                 if (c.getLastShopCell() != cellIdx) {
@@ -832,7 +944,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                                 double actualZ = c.getPosZ();
                                 double distFromExpected = std::sqrt((actualX - expectedX) * (actualX - expectedX) + (actualZ - expectedZ) * (actualZ - expectedZ));
                                 AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
-                                if(lf) lf << "{\"hypothesisId\":\"G\",\"location\":\"customer_behavior.cpp:pick_product\",\"message\":\"PICK PRODUCT DECISION\",\"data\":{\"customerId\":" << c.getId() << ",\"chosenSku\":" << chosenSku << ",\"cellIdx\":" << cellIdx << ",\"edgeIdx\":" << c.currentEdgeIndex << ",\"actualPos\":[" << actualX << "," << actualZ << "],\"expectedCellPos\":[" << expectedX << "," << expectedZ << "],\"distFromExpected\":" << distFromExpected << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+                                if(lf) lf << "{\"hypothesisId\":\"G\",\"location\":\"customer_behavior.cpp:pick_product\",\"message\":\"PICK PRODUCT DECISION\",\"data\":{\"customerId\":" << c.getId() << ",\"chosenSku\":" << chosenSku << ",\"cellIdx\":" << cellIdx << ",\"edgeIdx\":" << c.getCurrentEdgeIndex() << ",\"actualPos\":[" << actualX << "," << actualZ << "],\"expectedCellPos\":[" << expectedX << "," << expectedZ << "],\"distFromExpected\":" << distFromExpected << ",\"usingNavmesh\":" << (c.isUsingNavmesh() ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
                             }
                             // #endregion
                             return {Decision::PickProduct, chosenSku, 1.0f};
@@ -846,12 +958,13 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
     // --- STATE MACHINE: MOVEMENT ---
     // #region agent log
     { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
-        if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"customer_behavior.cpp:movement_check\",\"message\":\"Movement check\",\"data\":{\"customerId\":" << c.getId() << ",\"distOnEdge\":" << c.distOnEdge << ",\"edgeLength\":" << currentEdge.getLength() << ",\"atNodeBoundary\":" << (c.distOnEdge >= currentEdge.getLength() ? "true" : "false") << ",\"browsingSkipped\":" << ((c.distOnEdge >= currentEdge.getLength() && state == Browsing) ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+        const double dist = c.getDistOnEdge();
+        if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"customer_behavior.cpp:movement_check\",\"message\":\"Movement check\",\"data\":{\"customerId\":" << c.getId() << ",\"distOnEdge\":" << dist << ",\"edgeLength\":" << currentEdge.getLength() << ",\"atNodeBoundary\":" << (dist >= currentEdge.getLength() ? "true" : "false") << ",\"browsingSkipped\":" << ((dist >= currentEdge.getLength() && state == Browsing) ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
     // #endregion
-    if (c.distOnEdge >= currentEdge.getLength()) {
+    if (c.getDistOnEdge() >= currentEdge.getLength()) {
         // #region agent log
         { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
-            if(lf) lf << "{\"hypothesisId\":\"E\",\"location\":\"customer_behavior.cpp:348\",\"message\":\"Arrived at node (edge-based)\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"currentNode\":" << currentNode << ",\"distOnEdge\":" << c.distOnEdge << ",\"edgeLength\":" << currentEdge.getLength() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            if(lf) lf << "{\"hypothesisId\":\"E\",\"location\":\"customer_behavior.cpp:348\",\"message\":\"Arrived at node (edge-based)\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"currentNode\":" << currentNode << ",\"distOnEdge\":" << c.getDistOnEdge() << ",\"edgeLength\":" << currentEdge.getLength() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
         // #endregion
         const auto &arrivalNode = ctx.store.nodeAt(currentNode);
         const int arrivalNodeId = arrivalNode.getNodeId();
@@ -890,9 +1003,9 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             if (ctx.basket.getSize() > 0) {
                 if (state == HeadingToCheckout && !c.isInQueue()) {
                     // Join checkout queue
-                    if (ctx.queueManager) {
+            if (ctx.queueManager) {
                         int laneId = ctx.queueManager->selectLane(
-                            c.posX, c.posZ, c.getPatience(), c.getCrowdSensitivity());
+                            c.getPosX(), c.getPosZ(), c.getPatience(), c.getCrowdSensitivity());
                         if (laneId >= 0) {
                             ctx.queueManager->joinQueue(laneId, c.getId());
                             c.setQueueLaneId(laneId);
@@ -952,7 +1065,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 c.setUsingNavmesh(false);
             }
             // #region agent log
-            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:exit_arrival\",\"message\":\"Agent arrived at Exit node\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << ",\"distOnEdge\":" << c.distOnEdge << ",\"edgeLength\":" << currentEdge.getLength() << "\",\"expectedStates\":\"HeadingToExit or Exiting\",\"willDespawn\":" << (state == Exiting ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:exit_arrival\",\"message\":\"Agent arrived at Exit node\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << ",\"distOnEdge\":" << c.getDistOnEdge() << ",\"edgeLength\":" << currentEdge.getLength() << "\",\"expectedStates\":\"HeadingToExit or Exiting\",\"willDespawn\":" << (state == Exiting ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
             // #endregion
             state = Exiting;
             return {Decision::Despawn};
@@ -1053,8 +1166,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         bool useNavmesh = ctx.store.hasNavMesh();
         if (useNavmesh && targetNodeId >= 0) {
             // Get current position (use node center if world pos not set)
-            double startX = c.posX;
-            double startZ = c.posZ;
+            double startX = c.getPosX();
+            double startZ = c.getPosZ();
             if (startX == 0.0 && startZ == 0.0) {
                 // Initialize from current node center
                 const auto &currentNodeObj = ctx.store.nodeAt(currentNode);
@@ -1074,10 +1187,30 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 const double dzg = endZ - c.getCachedGoal().second;
                 const double goalDiffSq = dxg * dxg + dzg * dzg;
                 constexpr double kGoalEpsSq = 0.25; // 0.5 m
+                // Failure cooldown: path was just cleared due to an obstacle
+                // (usingNavmesh=true, path empty, age near zero). Hold off 0.75 s so the
+                // agent drifts away from the shelf via edge-based movement first.
+                if (c.isUsingNavmesh() && c.getNavmeshPath().empty() && c.hasCachedGoal() &&
+                    goalDiffSq < kGoalEpsSq && c.getNavmeshPathAge() < 0.75) {
+                    return {Decision::Move};
+                }
                 if (c.isUsingNavmesh() && !c.getNavmeshPath().empty() && c.hasCachedGoal() &&
                     goalDiffSq < kGoalEpsSq &&
                     c.getNavmeshPathAge() < kNavmeshPathCacheTtlSeconds) {
                     return {Decision::Move};
+                }
+            }
+
+            // Snap start position away from obstacles before path calculation.
+            // An agent pressed against a shelf boundary would otherwise produce a first
+            // path segment that immediately re-enters the same obstacle.
+            if (ctx.store.hasPhysicsWorld()) {
+                Circle startSnap(startX, startZ, 0.40);
+                if (ctx.store.getPhysicsWorld().checkCollision(startSnap)) {
+                    ctx.store.getPhysicsWorld().resolveCollision(startSnap);
+                    startX = startSnap.x;
+                    startZ = startSnap.z;
+                    c.setPosition(startX, startZ);
                 }
             }
 
@@ -1096,6 +1229,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 reduceWaypointsByLineOfSight(waypoints, ctx.store);
                 // --- VALIDATE AND SNAP PATH ---
                 validateAndSnapPath(waypoints, ctx.store);
+                smoothCornerWaypoints(waypoints, ctx.store);
                 // ------------------------------
 
                 c.setNavmeshPath(waypoints);
@@ -1115,8 +1249,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 // #endregion
 
                 // Update current edge index for compatibility
-                c.currentEdgeIndex = nextEdge;
-                c.distOnEdge = 0.0;
+                c.setCurrentEdgeIndex(nextEdge);
+                c.setDistOnEdge(0.0);
 
                 // #region agent log
                 { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"A\",\"location\":\"customer_behavior.cpp:navmesh_set\",\"message\":\"Navmesh path set\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"pathSize\":" << waypoints.size() << ",\"nextEdge\":" << nextEdge << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
@@ -1134,10 +1268,10 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
 
     // #region agent log
     if (state == Exiting) {
-        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"H\",\"location\":\"customer_behavior.cpp:exiting_fallthrough\",\"message\":\"STUCK: Exiting state fell through to Move\",\"data\":{\"customerId\":" << c.getId() << ",\"distOnEdge\":" << c.distOnEdge << ",\"edgeLength\":" << currentEdge.getLength() << ",\"edgeIdx\":" << c.currentEdgeIndex << ",\"posX\":" << c.getPosX() << ",\"posZ\":" << c.getPosZ() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"H\",\"location\":\"customer_behavior.cpp:exiting_fallthrough\",\"message\":\"STUCK: Exiting state fell through to Move\",\"data\":{\"customerId\":" << c.getId() << ",\"distOnEdge\":" << c.getDistOnEdge() << ",\"edgeLength\":" << currentEdge.getLength() << ",\"edgeIdx\":" << c.getCurrentEdgeIndex() << ",\"posX\":" << c.getPosX() << ",\"posZ\":" << c.getPosZ() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
     }
     if (state == HeadingToExit) {
-        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"H\",\"location\":\"customer_behavior.cpp:headingtoexit_fallthrough\",\"message\":\"HeadingToExit state fell through to Move\",\"data\":{\"customerId\":" << c.getId() << ",\"distOnEdge\":" << c.distOnEdge << ",\"edgeLength\":" << currentEdge.getLength() << ",\"edgeIdx\":" << c.currentEdgeIndex << ",\"posX\":" << c.getPosX() << ",\"posZ\":" << c.getPosZ() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"H\",\"location\":\"customer_behavior.cpp:headingtoexit_fallthrough\",\"message\":\"HeadingToExit state fell through to Move\",\"data\":{\"customerId\":" << c.getId() << ",\"distOnEdge\":" << c.getDistOnEdge() << ",\"edgeLength\":" << currentEdge.getLength() << ",\"edgeIdx\":" << c.getCurrentEdgeIndex() << ",\"posX\":" << c.getPosX() << ",\"posZ\":" << c.getPosZ() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
     }
     if (state == HeadingToExit || state == Exiting) {
         const int exitIdx = getExitNodeIdx();
@@ -1146,7 +1280,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             const double dx = c.getPosX() - exitNode.getX();
             const double dz = c.getPosZ() - exitNode.getZ();
             const double distToExit = std::sqrt(dx * dx + dz * dz);
-            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"EXIT_POS\",\"location\":\"customer_behavior.cpp:exit_distance\",\"message\":\"Exit distance check\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"distToExit\":" << distToExit << ",\"exitPos\":[" << exitNode.getX() << "," << exitNode.getZ() << "],\"pos\":[" << c.getPosX() << "," << c.getPosZ() << "],\"distOnEdge\":" << c.distOnEdge << ",\"edgeLength\":" << currentEdge.getLength() << ",\"edgeIdx\":" << c.currentEdgeIndex << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"EXIT_POS\",\"location\":\"customer_behavior.cpp:exit_distance\",\"message\":\"Exit distance check\",\"data\":{\"customerId\":" << c.getId() << ",\"state\":\"" << getStateName() << "\",\"distToExit\":" << distToExit << ",\"exitPos\":[" << exitNode.getX() << "," << exitNode.getZ() << "],\"pos\":[" << c.getPosX() << "," << c.getPosZ() << "],\"distOnEdge\":" << c.getDistOnEdge() << ",\"edgeLength\":" << currentEdge.getLength() << ",\"edgeIdx\":" << c.getCurrentEdgeIndex() << ",\"usingNavmesh\":" << (c.isUsingNavmesh()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
         }
     }
     // #endregion
@@ -1154,10 +1288,10 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         return {Decision::Despawn};
 
     // Cell attraction: steer browsing agents toward stall positions (offset from shelf)
-    if (state == Browsing && c.currentEdgeIndex >= 0 && !c.isUsingNavmesh()) {
-        const auto &edge = ctx.store.edgeAt(c.currentEdgeIndex);
+    if (state == Browsing && c.getCurrentEdgeIndex() >= 0 && !c.isUsingNavmesh()) {
+        const auto &edge = ctx.store.edgeAt(c.getCurrentEdgeIndex());
         if (edge.getCellCount() > 0) {
-            int cellIdx = static_cast<int>(c.distOnEdge / edge.getCellLength());
+            int cellIdx = static_cast<int>(c.getDistOnEdge() / edge.getCellLength());
             cellIdx = std::clamp(cellIdx, 0, edge.getCellCount() - 1);
 
             // Use stall position if interacting with a cell, otherwise use cell center
@@ -1165,23 +1299,23 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             if (c.getTargetCellIdx() == cellIdx) {
                 // Steer toward stall position (offset toward shelf side)
                 auto [stallX, stallZ] = ctx.store.getStallPosition(
-                    c.currentEdgeIndex, cellIdx, c.isInteractingLeftSide());
+                    c.getCurrentEdgeIndex(), cellIdx, c.isInteractingLeftSide());
                 targetX = stallX;
                 targetZ = stallZ;
             } else {
                 // Just passing through - steer toward cell center
-                auto [cellX, cellZ] = ctx.store.getCellCenter(c.currentEdgeIndex, cellIdx);
+                auto [cellX, cellZ] = ctx.store.getCellCenter(c.getCurrentEdgeIndex(), cellIdx);
                 targetX = cellX;
                 targetZ = cellZ;
             }
 
-            double dx = targetX - c.posX;
-            double dz = targetZ - c.posZ;
+            double dx = targetX - c.getPosX();
+            double dz = targetZ - c.getPosZ();
             double dist = std::sqrt(dx * dx + dz * dz);
 
             if (dist > 0.1) { // Only correct if >10cm off
                 double correctionRate = 0.15; // Blend factor per tick
-                c.setPosition(c.posX + dx * correctionRate, c.posZ + dz * correctionRate);
+                c.setPosition(c.getPosX() + dx * correctionRate, c.getPosZ() + dz * correctionRate);
             }
         }
     }
@@ -1224,13 +1358,13 @@ void MissionBehavior::onEnterStore(Customer &c, const ICustomerBehaviorContext &
 Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ctx) {
     if (c.getDwellTicks() > 0)
         return {Decision::Wait};
-    if (c.currentEdgeIndex == -1)
+    if (c.getCurrentEdgeIndex() == -1)
         return {Decision::Despawn};
 
     // InQueue walking: move toward queue waypoint position
     if (state == InQueue && c.isWalkingToQueuePos()) {
-        double dx = c.getQueueTargetX() - c.posX;
-        double dz = c.getQueueTargetZ() - c.posZ;
+        double dx = c.getQueueTargetX() - c.getPosX();
+        double dz = c.getQueueTargetZ() - c.getPosZ();
         double dist = std::sqrt(dx * dx + dz * dz);
 
         if (dist < 0.3) { // Arrived at waypoint
@@ -1238,7 +1372,7 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             c.setWalkingToQueuePos(false);
             // If at front of queue, start service timer
             if (ctx.queueManager && ctx.queueManager->isAtFront(c.getQueueLaneId(), c.getId())) {
-                const auto &regNode = ctx.store.nodeAt(ctx.store.edgeAt(c.currentEdgeIndex).getToNode());
+                    const auto &regNode = ctx.store.nodeAt(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode());
                 double rate = regNode.getServiceRate();
                 int serviceTicks = (rate > 0.01) ? static_cast<int>((1.0 / rate) * 60.0) : 300;
                 c.setDwellTicks(serviceTicks);
@@ -1249,10 +1383,10 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         }
 
         // Walk toward target
-        double walkSpeed = c.speed * ctx.dt;
+        double walkSpeed = c.getSpeed() * ctx.dt;
         double dirX = dx / dist;
         double dirZ = dz / dist;
-        c.setPosition(c.posX + dirX * walkSpeed, c.posZ + dirZ * walkSpeed);
+        c.setPosition(c.getPosX() + dirX * walkSpeed, c.getPosZ() + dirZ * walkSpeed);
         return {Decision::Move};
     }
 
@@ -1323,13 +1457,28 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
     if (useNavmesh && c.isUsingNavmesh() && !c.getNavmeshPath().empty() &&
         c.getCurrentWaypointIndex() < c.getNavmeshPath().size()) {
         const auto &waypoint = c.getNavmeshPath()[c.getCurrentWaypointIndex()];
-        double dx = waypoint.first - c.posX, dz = waypoint.second - c.posZ;
+        double dx = waypoint.first - c.getPosX(), dz = waypoint.second - c.getPosZ();
         double dist = std::sqrt(dx * dx + dz * dz);
         size_t pathSizeMb = c.getNavmeshPath().size();
         bool isLastWp = (c.getCurrentWaypointIndex() == pathSizeMb - 1);
         double reachRadiusMb = isLastWp ? GOAL_RADIUS
                                         : std::max(WAYPOINT_THRESHOLD_MIN,
-                                                   c.speed * ctx.dt * WAYPOINT_THRESHOLD_FRAME_FACTOR);
+                                                   c.getSpeed() * ctx.dt * WAYPOINT_THRESHOLD_FRAME_FACTOR);
+
+        // Skip unreachable intermediate waypoint to prevent oscillation at shelf corners.
+        if (!isLastWp && dist > reachRadiusMb && ctx.store.hasPhysicsWorld()) {
+            size_t nextIdxMb = c.getCurrentWaypointIndex() + 1;
+            if (nextIdxMb < c.getNavmeshPath().size()) {
+                const auto &nextWpMb = c.getNavmeshPath()[nextIdxMb];
+                bool losToNextMb = hasLineOfSight(ctx.store, c.getPosX(), c.getPosZ(),
+                                                  nextWpMb.first, nextWpMb.second, 0.35);
+                bool losToThisMb = hasLineOfSight(ctx.store, c.getPosX(), c.getPosZ(),
+                                                  waypoint.first, waypoint.second, 0.35);
+                if (!losToThisMb && losToNextMb)
+                    c.incrementWaypointIndex();
+            }
+        }
+
         if (dist < reachRadiusMb) {
             c.incrementWaypointIndex();
             if (c.getCurrentWaypointIndex() >= c.getNavmeshPath().size()) {
@@ -1338,7 +1487,7 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 if (state == HeadingToCheckout) {
                     state = HeadingToExit;
                     return {Decision::Checkout,
-                            ctx.store.nodeAt(ctx.store.edgeAt(c.currentEdgeIndex).getToNode())
+                            ctx.store.nodeAt(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode())
                                 .getNodeId(),
                             5.0f};
                 }
@@ -1360,7 +1509,7 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 return {Decision::Move};
             }
         } else {
-            double moveDist = std::min(c.speed * ctx.dt, dist);
+            double moveDist = std::min(c.getSpeed() * ctx.dt, dist);
             double dirX = (dist > 1e-6) ? dx / dist : 0.0;
             double dirZ = (dist > 1e-6) ? dz / dist : 0.0;
 
@@ -1371,9 +1520,12 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
 
             double velX = dirX;
             double velZ = dirZ;
-            if (sepX != 0.0 || sepZ != 0.0) {
-                velX = dirX * 0.7 + sepX * 0.3;
-                velZ = dirZ * 0.7 + sepZ * 0.3;
+            double sepMag = std::sqrt(sepX * sepX + sepZ * sepZ);
+            if (sepMag > 0.05) {
+                double invSepMag = 1.0 / sepMag;
+                double blendW = std::min(sepMag * 0.35, 0.30);
+                velX = dirX * (1.0 - blendW) + (sepX * invSepMag) * blendW;
+                velZ = dirZ * (1.0 - blendW) + (sepZ * invSepMag) * blendW;
             }
 
             double jx = jitterDist()(jitterRng());
@@ -1393,34 +1545,42 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             double moveX = velX * moveDist;
             double moveZ = velZ * moveDist;
 
-            double newX = c.posX + moveX;
-            double newZ = c.posZ + moveZ;
+            double newX = c.getPosX() + moveX;
+            double newZ = c.getPosZ() + moveZ;
             const double agentRadius = 0.35;
             if (ctx.collisionManager &&
                 ctx.collisionManager->wouldCollideWithAgents(newX, newZ, agentRadius, &c)) {
                 moveX *= 0.5;
                 moveZ *= 0.5;
-                newX = c.posX + moveX;
-                newZ = c.posZ + moveZ;
+                newX = c.getPosX() + moveX;
+                newZ = c.getPosZ() + moveZ;
             }
 
             if (ctx.store.hasPhysicsWorld() &&
                 !ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35)) {
-                newX = c.posX + moveX * 0.5;
-                newZ = c.posZ + moveZ * 0.5;
+                newX = c.getPosX() + moveX * 0.5;
+                newZ = c.getPosZ() + moveZ * 0.5;
                 if (!ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35)) {
+                    // Snap agent away from shelf before clearing — cooldown stays active.
+                    {
+                        Circle snapCircle(c.getPosX(), c.getPosZ(), 0.35);
+                        if (ctx.store.getPhysicsWorld().checkCollision(snapCircle)) {
+                            ctx.store.getPhysicsWorld().resolveCollision(snapCircle);
+                            c.setPosition(snapCircle.x, snapCircle.z);
+                        }
+                    }
                     c.setNavmeshPath({});
-                    c.setUsingNavmesh(false);
+                    // usingNavmesh stays true — cooldown fires for ~0.75 s.
                     return {Decision::Move};
                 }
             }
             // #region debug log
-            { bool inObst = ctx.store.hasPhysicsWorld() && !ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35); std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"customer_behavior.cpp:mission_navmesh_move\",\"message\":\"Mission navmesh step\",\"data\":{\"customerId\":" << c.getId() << ",\"posBeforeX\":" << c.posX << ",\"posBeforeZ\":" << c.posZ << ",\"waypointX\":" << waypoint.first << ",\"waypointZ\":" << waypoint.second << ",\"newPosX\":" << newX << ",\"newPosZ\":" << newZ << ",\"inObstacleAfter\":" << (inObst ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            { bool inObst = ctx.store.hasPhysicsWorld() && !ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35); std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"customer_behavior.cpp:mission_navmesh_move\",\"message\":\"Mission navmesh step\",\"data\":{\"customerId\":" << c.getId() << ",\"posBeforeX\":" << c.getPosX() << ",\"posBeforeZ\":" << c.getPosZ() << ",\"waypointX\":" << waypoint.first << ",\"waypointZ\":" << waypoint.second << ",\"newPosX\":" << newX << ",\"newPosZ\":" << newZ << ",\"inObstacleAfter\":" << (inObst ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
             // #endregion
             c.setPosition(newX, newZ);
-            if (c.currentEdgeIndex >= 0)
-                c.distOnEdge = std::min(c.distOnEdge + moveDist,
-                                        ctx.store.edgeAt(c.currentEdgeIndex).getLength());
+            if (c.getCurrentEdgeIndex() >= 0)
+                c.setDistOnEdge(std::min(c.getDistOnEdge() + moveDist,
+                                         ctx.store.edgeAt(c.getCurrentEdgeIndex()).getLength()));
             return {Decision::Move};
         }
     }
@@ -1462,12 +1622,21 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             c.setTargetCellIdx(cell);
             c.setInteractingLeftSide(leftSide);
             auto [tx, tz] = ctx.store.getStallPosition(e, cell, leftSide);
-            double sx = c.posX, sz = c.posZ;
+            double sx = c.getPosX(), sz = c.getPosZ();
             if (sx == 0.0 && sz == 0.0) {
                 int nodeIdx = ctx.store.edgeAt(e).getFromNode();
                 sx = ctx.store.nodeAt(nodeIdx).getX();
                 sz = ctx.store.nodeAt(nodeIdx).getZ();
                 c.setPosition(sx, sz);
+            }
+            if (ctx.store.hasPhysicsWorld()) {
+                Circle startSnap(sx, sz, 0.40);
+                if (ctx.store.getPhysicsWorld().checkCollision(startSnap)) {
+                    ctx.store.getPhysicsWorld().resolveCollision(startSnap);
+                    sx = startSnap.x;
+                    sz = startSnap.z;
+                    c.setPosition(sx, sz);
+                }
             }
             auto path = NavMeshPathfinder::findPath(ctx.store.getNavMesh(), sx, sz, tx, tz);
             if (!path.empty()) {
@@ -1479,6 +1648,7 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 reduceWaypointsByLineOfSight(waypoints, ctx.store);
                 // --- VALIDATE AND SNAP PATH ---
                 validateAndSnapPath(waypoints, ctx.store);
+                smoothCornerWaypoints(waypoints, ctx.store);
                 // ------------------------------
 
                 c.setNavmeshPath(waypoints);
@@ -1493,8 +1663,8 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H1\",\"location\":\"customer_behavior.cpp:mission_path_set\",\"message\":\"Mission path waypoints obstacle check\",\"data\":{\"customerId\":" << c.getId() << ",\"pathSize\":" << waypoints.size() << ",\"waypointsInObstacle\":" << inObst << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
                 }
                 // #endregion
-                c.currentEdgeIndex = e;
-                c.distOnEdge = 0.0;
+                c.setCurrentEdgeIndex(e);
+                c.setDistOnEdge(0.0);
                 missionTargetEdgeIdx = e;
                 missionTargetCellIdx = cell;
                 return {Decision::Move};
@@ -1508,17 +1678,17 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         state = HeadingToCheckout;
 
     int currentNode = -1;
-    if (c.currentEdgeIndex >= 0) {
-        currentNode = ctx.store.edgeAt(c.currentEdgeIndex).getToNode();
-        const auto &edge = ctx.store.edgeAt(c.currentEdgeIndex);
-        if (c.distOnEdge >= edge.getLength()) {
+    if (c.getCurrentEdgeIndex() >= 0) {
+        currentNode = ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode();
+        const auto &edge = ctx.store.edgeAt(c.getCurrentEdgeIndex());
+        if (c.getDistOnEdge() >= edge.getLength()) {
             const auto &arr = ctx.store.nodeAt(currentNode);
             if (arr.getNodeType() == Node::NodeType::Register && ctx.basket.getSize() > 0) {
                 if (state == HeadingToCheckout && !c.isInQueue()) {
                     // Join checkout queue
                     if (ctx.queueManager) {
                         int laneId = ctx.queueManager->selectLane(
-                            c.posX, c.posZ, c.getPatience(), c.getCrowdSensitivity());
+                            c.getPosX(), c.getPosZ(), c.getPatience(), c.getCrowdSensitivity());
                         if (laneId >= 0) {
                             ctx.queueManager->joinQueue(laneId, c.getId());
                             c.setQueueLaneId(laneId);
@@ -1573,8 +1743,8 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
     }
 
     if (state == HeadingToCheckout || state == HeadingToExit) {
-        if (currentNode < 0 && c.currentEdgeIndex >= 0)
-            currentNode = ctx.store.edgeAt(c.currentEdgeIndex).getToNode();
+        if (currentNode < 0 && c.getCurrentEdgeIndex() >= 0)
+            currentNode = ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode();
         if (currentNode >= 0 && useNavmesh) {
             int targetNodeId = -1;
             for (int i = 0; i < ctx.store.numNodes(); ++i) {
@@ -1586,14 +1756,23 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 }
             }
             if (targetNodeId >= 0) {
-                double sx = c.posX, sz = c.posZ;
-                if (sx == 0.0 && sz == 0.0 && c.currentEdgeIndex >= 0) {
-                    int n = ctx.store.edgeAt(c.currentEdgeIndex).getFromNode();
+                double sx = c.getPosX(), sz = c.getPosZ();
+                if (sx == 0.0 && sz == 0.0 && c.getCurrentEdgeIndex() >= 0) {
+                    int n = ctx.store.edgeAt(c.getCurrentEdgeIndex()).getFromNode();
                     sx = ctx.store.nodeAt(n).getX();
                     sz = ctx.store.nodeAt(n).getZ();
                     c.setPosition(sx, sz);
                 }
                 const auto &tn = ctx.store.nodeAt(ctx.store.nodeIndexById(targetNodeId));
+                if (ctx.store.hasPhysicsWorld()) {
+                    Circle startSnap(sx, sz, 0.40);
+                    if (ctx.store.getPhysicsWorld().checkCollision(startSnap)) {
+                        ctx.store.getPhysicsWorld().resolveCollision(startSnap);
+                        sx = startSnap.x;
+                        sz = startSnap.z;
+                        c.setPosition(sx, sz);
+                    }
+                }
                 auto path = NavMeshPathfinder::findPath(ctx.store.getNavMesh(), sx, sz, tn.getX(),
                                                         tn.getZ());
                 if (!path.empty()) {
@@ -1605,6 +1784,7 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     reduceWaypointsByLineOfSight(waypoints, ctx.store);
                     // --- VALIDATE AND SNAP PATH ---
                     validateAndSnapPath(waypoints, ctx.store);
+                    smoothCornerWaypoints(waypoints, ctx.store);
                     // ------------------------------
 
                     c.setNavmeshPath(waypoints);
@@ -1624,8 +1804,8 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                                                                      ? Node::NodeType::Register
                                                                      : Node::NodeType::Exit,
                                                                  ctx.store);
-                    c.currentEdgeIndex = nextEdge >= 0 ? nextEdge : c.currentEdgeIndex;
-                    c.distOnEdge = 0.0;
+                    c.setCurrentEdgeIndex(nextEdge >= 0 ? nextEdge : c.getCurrentEdgeIndex());
+                    c.setDistOnEdge(0.0);
                     return {Decision::Move};
                 }
             }

@@ -43,3 +43,10 @@ export function downloadCsv(runId, kind) {
   window.open(`/api/runs/${runId}/${kind}.csv`, "_blank");
 }
 
+export async function listWorkers(runId) {
+  const { data } = await api.get("/workers", {
+    params: { run_id: runId }
+  });
+  return data;
+}
+

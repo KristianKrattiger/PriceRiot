@@ -156,6 +156,12 @@ int main(int argc, char **argv) {
     float missionWeight      = 1.0f;
     float defaultWeight      = 1.0f;
 
+    // Staff configuration (used by the Simulator when starting a run).
+    int   numStockers        = 2;
+    int   numCashiers        = 1;
+    bool  autoStockTasks     = true;
+    bool  autoRegisterTasks  = true;
+
     std::unique_ptr<Simulator> simPtr;
     try {
         simPtr = std::make_unique<Simulator>(storePath, spawnInterval, 0.5f);
@@ -236,6 +242,9 @@ int main(int argc, char **argv) {
 
     unsigned long long simSeed = 0; // captured for the behavior log header
 
+    // Worker inspection selection.
+    int selectedWorkerId = -1;
+
     // ── Main loop ────────────────────────────────────────────────────────────
     sf::Clock deltaClock;
 
@@ -295,7 +304,7 @@ int main(int argc, char **argv) {
                         ag->cust->getLastDecisionType(),
                         ag->cust->getLastDecisionTargetId(),
                         ag->basket.getSize(),
-                        ag->cust->currentEdgeIndex
+                        ag->cust->getCurrentEdgeIndex()
                     });
                     while (guiBehaviorLog.size() > GUI_BEHAVIOR_LOG_MAX)
                         guiBehaviorLog.pop_front();
@@ -307,16 +316,16 @@ int main(int argc, char **argv) {
                     double pz = ag->cust->getPosZ();
                     // Fall back to edge-based position if world pos is zero
                     if (px == 0.0 && pz == 0.0 &&
-                        ag->cust->currentEdgeIndex >= 0 &&
-                        ag->cust->currentEdgeIndex < store.numEdges()) {
-                        int edgeId = store.edgeAt(ag->cust->currentEdgeIndex).getEdgeId();
+                        ag->cust->getCurrentEdgeIndex() >= 0 &&
+                        ag->cust->getCurrentEdgeIndex() < store.numEdges()) {
+                        int edgeId = store.edgeAt(ag->cust->getCurrentEdgeIndex()).getEdgeId();
                         if (layout.edgeGeoms.count(edgeId)) {
                             const auto &geo = layout.edgeGeoms.at(edgeId);
                             float edgeLen = std::sqrt(
                                 std::pow(geo.endX - geo.startX, 2) +
                                 std::pow(geo.endZ - geo.startZ, 2));
                             float t = (edgeLen > 0)
-                                ? static_cast<float>(ag->cust->distOnEdge) / edgeLen
+                                ? static_cast<float>(ag->cust->getDistOnEdge()) / edgeLen
                                 : 0.0f;
                             t  = std::max(0.0f, std::min(1.0f, t));
                             px = geo.startX + (geo.endX - geo.startX) * t;
@@ -331,7 +340,7 @@ int main(int argc, char **argv) {
                                         ag->cust->getLastDecisionType(),
                                         ag->cust->getLastDecisionTargetId(),
                                         ag->basket.getSize(),
-                                        ag->cust->currentEdgeIndex,
+                                        ag->cust->getCurrentEdgeIndex(),
                                         ag->cust->getDwellTicks());
                 }
 
@@ -345,16 +354,16 @@ int main(int argc, char **argv) {
                     double px = ag->cust->getPosX();
                     double pz = ag->cust->getPosZ();
                     if (px == 0.0 && pz == 0.0 &&
-                        ag->cust->currentEdgeIndex >= 0 &&
-                        ag->cust->currentEdgeIndex < store.numEdges()) {
-                        int edgeId = store.edgeAt(ag->cust->currentEdgeIndex).getEdgeId();
+                        ag->cust->getCurrentEdgeIndex() >= 0 &&
+                        ag->cust->getCurrentEdgeIndex() < store.numEdges()) {
+                        int edgeId = store.edgeAt(ag->cust->getCurrentEdgeIndex()).getEdgeId();
                         if (layout.edgeGeoms.count(edgeId)) {
                             const auto &geo = layout.edgeGeoms.at(edgeId);
                             float edgeLen = std::sqrt(
                                 std::pow(geo.endX - geo.startX, 2) +
                                 std::pow(geo.endZ - geo.startZ, 2));
                             float t = (edgeLen > 0)
-                                ? static_cast<float>(ag->cust->distOnEdge) / edgeLen
+                                ? static_cast<float>(ag->cust->getDistOnEdge()) / edgeLen
                                 : 0.0f;
                             t  = std::max(0.0f, std::min(1.0f, t));
                             px = geo.startX + (geo.endX - geo.startX) * t;
@@ -388,7 +397,17 @@ int main(int argc, char **argv) {
             ImGui::Text("Mission probability: %.2f",
                         (modalTotal > 0.0f) ? missionWeight / modalTotal : 0.5f);
             ImGui::Separator();
+
+            ImGui::Text("Staffing");
+            ImGui::InputInt("Stockers", &numStockers);
+            ImGui::InputInt("Cashiers", &numCashiers);
+            ImGui::Checkbox("Auto-stock shelves", &autoStockTasks);
+            ImGui::Checkbox("Auto-open registers", &autoRegisterTasks);
+
             if (ImGui::Button("Start")) {
+                sim.setWorkerConfig(numStockers, numCashiers,
+                                    autoStockTasks, autoRegisterTasks);
+                sim.reset(); // apply staffing config by respawning staff pool
                 hasStarted     = true;
                 isPaused       = false;
                 stepOnce       = false;
@@ -430,14 +449,20 @@ int main(int argc, char **argv) {
 
         ImGui::Separator();
         ImGui::Text("Active Agents: %zu", sim.getAgents().size());
+        ImGui::Text("Active Workers: %zu", sim.getWorkers().size());
 
         if (!hasStarted) {
             ImGui::Text("Run not started");
             if (ImGui::Button("Configure Run"))   showConfigModal = true;
             ImGui::SameLine();
             if (ImGui::Button("Start Run")) {
+                sim.setWorkerConfig(numStockers, numCashiers,
+                                    autoStockTasks, autoRegisterTasks);
+                sim.reset(); // apply staffing config
                 hasStarted = true;
                 isPaused   = false;
+                stepOnce   = false;
+                showConfigModal = false;
             }
         }
 
@@ -565,7 +590,7 @@ int main(int argc, char **argv) {
                     ? selCust->getBehavior()->getStateName() : "?");
                 ImGui::Text("Position:   %.2f, %.2f",
                             selCust->getPosX(), selCust->getPosZ());
-                ImGui::Text("Edge index: %d", selCust->currentEdgeIndex);
+                ImGui::Text("Edge index: %d", selCust->getCurrentEdgeIndex());
                 static const char *kDecisionNames[] = {
                     "Move","SwitchEdge","PickProduct","Wait","Checkout","Despawn"
                 };
@@ -580,6 +605,70 @@ int main(int argc, char **argv) {
         } else {
             ImGui::TextDisabled("Select a customer from the list above.");
         }
+        ImGui::End();
+
+        // ── ImGui: Worker Debug ──────────────────────────────────────────────
+        ImGui::Begin("Worker Debug");
+        ImGui::Text("Select a worker to inspect:");
+        for (const auto &wPtr : sim.getWorkers()) {
+            if (!wPtr) continue;
+            const Worker &w = *wPtr;
+            const bool isSelected = (w.getId() == selectedWorkerId);
+
+            const char *role =
+                (w.canStock() && w.canServe()) ? "Hybrid" :
+                (w.canStock()) ? "Stocker" :
+                (w.canServe()) ? "Cashier" : "Worker";
+
+            const Task *t = w.currentTask();
+            const char *taskState = t ? "Executing" : "Idle";
+
+            char label[128];
+            std::snprintf(label, sizeof(label), "ID %d  %s  %s",
+                          w.getId(), role, taskState);
+            if (ImGui::Selectable(label, isSelected)) {
+                selectedWorkerId = w.getId();
+            }
+        }
+
+        if (selectedWorkerId >= 0) {
+            const Worker *selWorker = nullptr;
+            for (const auto &wPtr : sim.getWorkers()) {
+                if (wPtr && wPtr->getId() == selectedWorkerId) {
+                    selWorker = wPtr.get();
+                    break;
+                }
+            }
+            if (selWorker) {
+                const Worker &w = *selWorker;
+                const Task *t = w.currentTask();
+
+                const char *role =
+                    (w.canStock() && w.canServe()) ? "Hybrid" :
+                    (w.canStock()) ? "Stocker" :
+                    (w.canServe()) ? "Cashier" : "Worker";
+
+                ImGui::Separator();
+                ImGui::Text("Role: %s", role);
+                ImGui::Text("Position: %.2f, %.2f", w.getPosX(), w.getPosZ());
+                ImGui::Text("Happiness: %.2f", w.getHappiness());
+                ImGui::Text("Efficiency: %.2f", w.getTaskEfficiency());
+
+                if (t) {
+                    const char *typeStr =
+                        (t->type == TaskType::StockShelves) ? "StockShelves" :
+                        (t->type == TaskType::ProcessRegister) ? "ProcessRegister" :
+                        "AssistCustomer";
+                    ImGui::Text("Current task: %s", typeStr);
+                    ImGui::Text("Task target_id: %d", t->targetId);
+                } else {
+                    ImGui::Text("Current task: —");
+                }
+            } else {
+                selectedWorkerId = -1;
+            }
+        }
+
         ImGui::End();
 
         // ── ImGui: Mission Checkout Log ──────────────────────────────────────
@@ -686,7 +775,7 @@ int main(int argc, char **argv) {
         agentShape.setOrigin(3.0f, 3.0f);
 
         for (const auto &ag : sim.getAgents()) {
-            if (ag->cust->currentEdgeIndex == -1) continue;
+            if (ag->cust->getCurrentEdgeIndex() == -1) continue;
 
             const bool selected = (ag->cust->getId() == selectedCustomerId);
             if (selected) {
@@ -708,7 +797,7 @@ int main(int argc, char **argv) {
                 currX = static_cast<float>(ag->cust->getPosX());
                 currZ = static_cast<float>(ag->cust->getPosZ());
             } else {
-                int eIdx = ag->cust->currentEdgeIndex;
+                int eIdx = ag->cust->getCurrentEdgeIndex();
                 if (eIdx < 0 || eIdx >= store.numEdges()) continue;
                 int edgeId = store.edgeAt(eIdx).getEdgeId();
                 if (!layout.edgeGeoms.count(edgeId)) continue;
@@ -716,7 +805,7 @@ int main(int argc, char **argv) {
                 float edgeLen = std::sqrt(std::pow(geo.endX - geo.startX, 2) +
                                           std::pow(geo.endZ - geo.startZ, 2));
                 float t = (edgeLen > 0)
-                    ? static_cast<float>(ag->cust->distOnEdge) / edgeLen
+                    ? static_cast<float>(ag->cust->getDistOnEdge()) / edgeLen
                     : 0.0f;
                 t     = std::max(0.0f, std::min(1.0f, t));
                 currX = geo.startX + (geo.endX - geo.startX) * t;
@@ -726,6 +815,39 @@ int main(int argc, char **argv) {
             agentShape.setPosition(currX * PIXELS_PER_METER + dynamicOffsetX,
                                    currZ * PIXELS_PER_METER + dynamicOffsetY);
             window.draw(agentShape);
+        }
+
+        // ── Staff workers overlay (task debugging) ──────────────────────────
+        for (const auto &wPtr : sim.getWorkers()) {
+            if (!wPtr) continue;
+            const Worker &w = *wPtr;
+            const Task *t = w.currentTask();
+
+            // Role base color.
+            sf::Color baseColor = sf::Color(200, 200, 200);
+            if (w.canStock() && w.canServe())
+                baseColor = sf::Color(170, 100, 255); // hybrid
+            else if (w.canStock())
+                baseColor = sf::Color(80, 200, 255);  // stocker
+            else if (w.canServe())
+                baseColor = sf::Color(120, 255, 120); // cashier
+
+            const float radius = t ? 7.0f : 5.0f;
+            sf::CircleShape workerShape(radius);
+            workerShape.setOrigin(radius * 0.5f, radius * 0.5f);
+            workerShape.setFillColor(baseColor);
+
+            if (t) {
+                workerShape.setOutlineColor(sf::Color::Yellow);
+                workerShape.setOutlineThickness(1.5f);
+            } else {
+                workerShape.setOutlineThickness(0.0f);
+            }
+
+            workerShape.setPosition(
+                static_cast<float>(w.getPosX() * PIXELS_PER_METER + dynamicOffsetX),
+                static_cast<float>(w.getPosZ() * PIXELS_PER_METER + dynamicOffsetY));
+            window.draw(workerShape);
         }
 
         ImGui::SFML::Render(window);

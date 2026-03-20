@@ -1,6 +1,6 @@
 /**
  * @file simulator.h
- * @brief Headless simulation core: Simulator class and Agent struct.
+ * @brief Headless simulation core: Simulator class and CustomerVisit struct.
  *
  * Extracts all simulation state and logic from the monolithic sim.cpp/runSim(),
  * so the engine can be driven either by the SFML visualiser (sim.cpp) or by
@@ -24,15 +24,18 @@
 #include "../agents/basket.h"
 #include "../agents/customer.h"
 #include "../agents/customer_behavior.h"
+#include "../agents/worker.h"
 #include "../environment/checkout_queue.h"
 #include "../environment/collision_manager.h"
 #include "../environment/environment.h"
 #include "../environment/products.h"
 #include "../environment/store_layout.h"
+#include "task_manager.h"
 #include "transaction.h"
 
 #include <cstdint>
 #include <deque>
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -51,12 +54,12 @@ struct MissionCheckoutSnapshot {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agent
+// CustomerVisit
 // Customer + Basket pair that lives for one store visit.
 // Moved here from the anonymous scope in sim.cpp so both the visualiser and
 // the headless Simulator can share the same definition.
 // ─────────────────────────────────────────────────────────────────────────────
-struct Agent {
+struct CustomerVisit {
     std::shared_ptr<Customer> cust;
     Basket basket;
     bool hasPaid = false;
@@ -65,13 +68,27 @@ struct Agent {
      * @param missionProbability Probability in [0,1] that a browsing customer
      *        is upgraded to MissionBehavior regardless of their TripPurpose.
      */
-    Agent(std::shared_ptr<Customer> c, Basket b, float missionProbability,
-          std::default_random_engine &engine);
+    CustomerVisit(std::shared_ptr<Customer> c, Basket b, float missionProbability,
+                  std::default_random_engine &engine);
 
-    /** Tick the agent. Returns false when the agent should be despawned. */
+    /** Tick the visit. Returns false when the agent should be despawned. */
     bool update(float dt, const StoreGraph &store,
                 CheckoutQueueManager *queueManager = nullptr,
                 CollisionManager *collisionManager = nullptr);
+};
+
+/** Lightweight snapshot of a Worker for UI / analytics. */
+struct WorkerSnapshot {
+    int      id            = 0;
+    double   posX          = 0.0;
+    double   posZ          = 0.0;
+    bool     canStock      = false;
+    bool     canServe      = false;
+    double   happiness     = 1.0;
+    double   taskEfficiency= 1.0;
+    bool     hasTask       = false;
+    TaskType taskType      = TaskType::StockShelves;
+    int      taskTargetId  = -1;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -146,6 +163,22 @@ class Simulator {
     /** Set RNG seed for reproducible runs. Call before run() or after reset(). */
     void setSeed(std::uint32_t seed)          { rng_.seed(seed);               }
 
+    /**
+     * Configure staff pool and automatic task generation.
+     * Notes:
+     *  - The worker pool itself is spawned in loadStore()/reset(),
+     *    so changing these values should be followed by reset() to apply counts.
+     */
+    void setWorkerConfig(int numStockers,
+                          int numCashiers,
+                          bool autoStockTasks,
+                          bool autoRegisterTasks) {
+        numStockers_       = std::max(0, numStockers);
+        numCashiers_       = std::max(0, numCashiers);
+        autoStockTasks_    = autoStockTasks;
+        autoRegisterTasks_ = autoRegisterTasks;
+    }
+
     // ── Accessors for the SFML Visualiser (sim.cpp) ─────────────────────────
 
     [[nodiscard]] const StoreGraph           &getStore()          const { return store_;          }
@@ -154,7 +187,7 @@ class Simulator {
     [[nodiscard]] const CheckoutQueueManager &getQueueManager()   const { return queueManager_;  }
     [[nodiscard]] CheckoutQueueManager       &getMutableQueueManager()  { return queueManager_;  }
     [[nodiscard]] const CollisionManager     &getCollisionManager()const { return collisionManager_; }
-    [[nodiscard]] const std::vector<std::unique_ptr<Agent>> &getAgents() const { return agents_; }
+    [[nodiscard]] const std::vector<std::unique_ptr<CustomerVisit>> &getAgents() const { return agents_; }
     [[nodiscard]] float getElapsedTime()  const { return elapsedTime_;  }
     [[nodiscard]] float getSpawnInterval() const { return spawnInterval_; }
     [[nodiscard]] float getMissionProbability() const { return missionProbability_; }
@@ -168,6 +201,14 @@ class Simulator {
         return queueLengthsHistory_;
     }
 
+    /** Access to workers for visualiser / bindings. */
+    [[nodiscard]] const std::vector<std::unique_ptr<Worker>> &getWorkers() const {
+        return workers_;
+    }
+
+    /** Snapshot workers into simple POD structs for analytics/UI. */
+    [[nodiscard]] std::vector<WorkerSnapshot> getWorkerSnapshots() const;
+
     /** Mission vs basket at checkout (captured before basket clear). Max 50 entries. */
     [[nodiscard]] const std::deque<MissionCheckoutSnapshot> &getMissionCheckoutLog() const {
         return missionCheckoutLog_;
@@ -180,7 +221,9 @@ class Simulator {
     // ── Per-Tick Helpers ────────────────────────────────────────────────────
     void spawnAgent(float dt);
     void updateAgents(float dt);
-    void finalizeCheckout(Agent &agent);
+    void updateWorkers(float dt);
+    void generateTasks(float dt);
+    void finalizeCheckout(CustomerVisit &agent);
     void removeDeadAgents();
     void sampleQueues();
 
@@ -202,7 +245,9 @@ class Simulator {
     CheckoutQueueManager  queueManager_;
     CollisionManager      collisionManager_;
 
-    std::vector<std::unique_ptr<Agent>>        agents_;
+    std::vector<std::unique_ptr<CustomerVisit>> agents_;
+    TaskManager                                       taskManager_;
+    std::vector<std::unique_ptr<Worker>>             workers_;
     std::vector<std::shared_ptr<Customer>>     customerPool_;
 
     mutable std::mutex          transactionMutex_;
@@ -215,6 +260,14 @@ class Simulator {
     float  missionProbability_= 0.5f;
     float  elapsedTime_       = 0.0f;
     int    nextTransactionId_ = 1;
+
+    // Simple worker/task tuning knobs.
+    int   numStockers_          = 2;
+    int   numCashiers_          = 1;
+    bool  autoStockTasks_       = true;
+    bool  autoRegisterTasks_    = true;
+    float taskScanTimer_        = 0.0f;
+    float taskScanInterval_     = 1.0f; // seconds between heuristic task scans
 
     // Aggregated traffic metrics: per-edge, per-cell visit counts.
     // Incremented once per tick for each agent based on its current edge/cell.

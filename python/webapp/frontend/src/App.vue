@@ -48,12 +48,14 @@ import { listRuns } from "./api/client";
 import RunTab from "./components/RunTab.vue";
 import ResultsTab from "./components/ResultsTab.vue";
 import CompareTab from "./components/CompareTab.vue";
+import WorkersPanel from "./components/WorkersPanel.vue";
 
 const store = useSimulationStore();
 
 const tabs = [
   { id: "run", label: "Run simulation", component: RunTab },
   { id: "results", label: "Results", component: ResultsTab },
+  { id: "workers", label: "Workers", component: WorkersPanel },
   { id: "compare", label: "Compare", component: CompareTab }
 ];
 

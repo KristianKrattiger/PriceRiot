@@ -8,6 +8,7 @@
 #ifndef CUSTOMER_H
 #define CUSTOMER_H
 
+#include "agent.h"
 #include "basket.h"
 #include <memory>
 #include <random>
@@ -23,7 +24,7 @@ class StoreGraph;
 class CheckoutQueueManager;
 class CollisionManager;
 
-class Customer {
+class Customer : public Agent {
   public:
     Customer();
     Customer(int id, double annualIncome, int age, std::string gender);
@@ -34,28 +35,20 @@ class Customer {
                 CheckoutQueueManager *queueManager = nullptr,
                 CollisionManager *collisionManager = nullptr);
 
-    // --- Navigation State ---
-    int currentEdgeIndex = -1;
-    double distOnEdge = 0.0;
-    double speed = 1.0;
+    // --- Navigation State (Agent wrappers) ---
+    [[nodiscard]] int getCurrentEdgeIndex() const noexcept { return Agent::getCurrentEdgeIndex(); }
+    void setCurrentEdgeIndex(int edgeIdx) noexcept { Agent::setCurrentEdgeIndex(edgeIdx); }
+
+    [[nodiscard]] double getDistOnEdge() const noexcept { return Agent::getDistOnEdge(); }
+    void setDistOnEdge(double dist) noexcept { Agent::setDistOnEdge(dist); }
+
+    [[nodiscard]] double getSpeed() const noexcept { return Agent::getSpeed(); }
+    void setSpeed(double s) noexcept { Agent::setSpeed(s); }
 
     // World position (for navmesh navigation)
-    double posX = 0.0;
-    double posZ = 0.0;
-
-    // Getters for world position
-    [[nodiscard]] double getPosX() const noexcept {
-        return posX;
-    }
-    [[nodiscard]] double getPosZ() const noexcept {
-        return posZ;
-    }
-
-    // Setters for world position
-    void setPosition(double x, double z) noexcept {
-        posX = x;
-        posZ = z;
-    }
+    using Agent::getPosX;
+    using Agent::getPosZ;
+    using Agent::setPosition;
 
     // --- Strategy Wiring ---
     void setBehavior(ICustomerBehavior *behavior) noexcept;
@@ -65,7 +58,7 @@ class Customer {
 
     // --- Getters (Stats) ---
     [[nodiscard]] int getId() const {
-        return id;
+        return Agent::getId();
     }
     [[nodiscard]] double getAnnualIncome() const {
         return annualIncome;
@@ -312,7 +305,7 @@ class Customer {
 
     ICustomerBehavior *behavior = nullptr;
 
-    int id;
+    // Identity lives in Agent base (id_)
     double annualIncome;
     double totalSpent;
     double averageSpend;

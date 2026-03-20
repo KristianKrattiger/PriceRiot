@@ -27,6 +27,18 @@ class RunConfig(BaseModel):
     random_seed: int = Field(
         0, ge=0, description="RNG seed; 0 = non-deterministic"
     )
+    num_stockers: int = Field(
+        2, ge=0, description="Number of shelf-stocking workers"
+    )
+    num_cashiers: int = Field(
+        1, ge=0, description="Number of checkout workers"
+    )
+    auto_stock_tasks: bool = Field(
+        True, description="Automatically generate StockShelves tasks from store state"
+    )
+    auto_register_tasks: bool = Field(
+        True, description="Automatically generate ProcessRegister tasks from queues"
+    )
     product_csv: Optional[str] = Field(
         default=None, description="Optional path to uploaded product CSV"
     )
@@ -59,6 +71,9 @@ class RunResult(BaseModel):
 
     # Placeholder for future graph / traffic data
     traffic_edges: Optional[List[Dict[str, Any]]] = None
+
+    # Snapshot of workers at end of run (for now).
+    workers: Optional[List[Dict[str, Any]]] = None
 
     # Aggregated KPIs for dashboard and comparison
     kpis: Dict[str, Any] = Field(default_factory=dict)

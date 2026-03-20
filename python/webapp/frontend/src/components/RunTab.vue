@@ -54,6 +54,46 @@
             class="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100"
           />
         </div>
+        <div>
+          <label class="block text-sm text-slate-300 mb-1">Stockers</label>
+          <input
+            v-model.number="numStockers"
+            type="number"
+            min="0"
+            class="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-300 mb-1">Cashiers</label>
+          <input
+            v-model.number="numCashiers"
+            type="number"
+            min="0"
+            class="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100"
+          />
+        </div>
+        <div class="flex items-center gap-2 mt-6">
+          <input
+            id="autoStockTasks"
+            type="checkbox"
+            v-model="autoStockTasks"
+            class="h-4 w-4 rounded border-slate-700 bg-slate-900"
+          />
+          <label for="autoStockTasks" class="text-sm text-slate-300">
+            Auto-stock shelves
+          </label>
+        </div>
+        <div class="flex items-center gap-2 mt-6">
+          <input
+            id="autoRegisterTasks"
+            type="checkbox"
+            v-model="autoRegisterTasks"
+            class="h-4 w-4 rounded border-slate-700 bg-slate-900"
+          />
+          <label for="autoRegisterTasks" class="text-sm text-slate-300">
+            Auto-open registers
+          </label>
+        </div>
       </div>
 
       <div class="space-y-3">
@@ -158,6 +198,10 @@ const durationSeconds = ref(600);
 const spawnInterval = ref(5);
 const missionProbability = ref(0.5);
 const randomSeed = ref(0);
+const numStockers = ref(2);
+const numCashiers = ref(1);
+const autoStockTasks = ref(true);
+const autoRegisterTasks = ref(true);
 
 const storeFile = ref(null);
 const productFile = ref(null);
@@ -200,6 +244,10 @@ async function startRun() {
   form.append("spawn_interval", String(spawnInterval.value));
   form.append("mission_probability", String(missionProbability.value));
   form.append("random_seed", String(randomSeed.value));
+  form.append("num_stockers", String(numStockers.value));
+  form.append("num_cashiers", String(numCashiers.value));
+  form.append("auto_stock_tasks", String(autoStockTasks.value));
+  form.append("auto_register_tasks", String(autoRegisterTasks.value));
   form.append("store_file", storeFile.value);
   if (productFile.value) form.append("product_file", productFile.value);
   if (posFile.value) form.append("pos_file", posFile.value);

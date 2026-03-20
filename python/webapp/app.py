@@ -52,6 +52,10 @@ async def create_run(
     spawn_interval: float = Form(5.0),
     mission_probability: float = Form(0.5),
     random_seed: int = Form(0),
+    num_stockers: int = Form(2),
+    num_cashiers: int = Form(1),
+    auto_stock_tasks: bool = Form(True),
+    auto_register_tasks: bool = Form(True),
     store_file: UploadFile = File(...),
     product_file: UploadFile | None = File(default=None),
     pos_file: UploadFile | None = File(default=None),
@@ -85,6 +89,10 @@ async def create_run(
         spawn_interval=spawn_interval,
         mission_probability=mission_probability,
         random_seed=random_seed,
+        num_stockers=num_stockers,
+        num_cashiers=num_cashiers,
+        auto_stock_tasks=auto_stock_tasks,
+        auto_register_tasks=auto_register_tasks,
         product_csv=product_path,
         pos_data=pos_path,
     )
@@ -164,6 +172,17 @@ def download_transactions_csv(run_id: str):
 def download_customers_csv(run_id: str):
     path = _materialize_csv(run_id, "customers")
     return FileResponse(path, media_type="text/csv", filename="customers.csv")
+
+
+@app.get("/api/workers")
+def get_workers(run_id: str):
+    """Return worker snapshots for a completed run."""
+    run = session_store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status != RunStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Run is not completed")
+    return run.workers or []
 
 
 if __name__ == "__main__":

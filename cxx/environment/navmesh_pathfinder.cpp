@@ -371,10 +371,13 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
 
     // --- CONFIGURATION: AGENT BUFFER ---
     // Keep path away from portal edges so waypoints stay clear of shelf obstacles at junctions.
-    // Use a margin larger than collision radius so paths don't cut through perpendicular junctions.
-    const double AGENT_RADIUS = 0.35;
-    const double JUNCTION_MARGIN = 0.15;  // Extra inset at node-edge portals to avoid corner/shelf overlap
-    const double PATH_BUFFER = AGENT_RADIUS + JUNCTION_MARGIN;
+    // The navmesh is now eroded by agent radius (0.35 m) so the polygon boundary is
+    // already the valid agent-centre boundary.  The PATH_BUFFER here is an additional
+    // inset BEYOND that erosion — just enough to keep waypoints slightly interior to
+    // the polygon rather than exactly on its edge.
+    const double AGENT_RADIUS     = 0.35;
+    const double JUNCTION_BUFFER  = AGENT_RADIUS * 0.6; // 0.21 m — small extra at junction corners
+    const double EDGE_BUFFER      = AGENT_RADIUS * 0.4; // 0.14 m — minimal inset mid-aisle
 
     // Step 1: Extract portal boundaries (left and right edges) between polygons
     std::vector<PathPoint> leftBoundary, rightBoundary;
@@ -391,7 +394,13 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
             !getGenericFallbackPortal(pa, pb, left, right))
             continue;
         ++portalsFound;
-        
+
+        // Use a larger buffer when exactly one side of the portal is a node polygon — these
+        // are the junction corners where shelf ends are closest to the walkable corridor.
+        bool aIsNode = pa.getAssociatedNodeId() >= 0;
+        bool bIsNode = pb.getAssociatedNodeId() >= 0;
+        double PATH_BUFFER = (aIsNode != bIsNode) ? JUNCTION_BUFFER : EDGE_BUFFER;
+
         // We artificially narrow the portal so the "string" wraps around a buffer zone
         // rather than the physical vertex of the wall.
         double dx = right.x - left.x;
@@ -405,7 +414,6 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
             double ndz = dz / len;
 
             // Calculate shrink amount: keep path away from portal edges (junctions / shelf corners).
-            // Use PATH_BUFFER so waypoints stay clear of obstacles at perpendicular junctions.
             // Clamp to 45% of portal width to avoid crossing in narrow hallways.
             double shrinkAmount = std::min(PATH_BUFFER, len * 0.45);
 

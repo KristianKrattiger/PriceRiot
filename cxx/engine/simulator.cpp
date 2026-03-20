@@ -22,11 +22,11 @@
 namespace priceriot {
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Agent
+// CustomerVisit
 // ═════════════════════════════════════════════════════════════════════════════
 
-Agent::Agent(std::shared_ptr<Customer> c, Basket b, float missionProbability,
-             std::default_random_engine &engine)
+CustomerVisit::CustomerVisit(std::shared_ptr<Customer> c, Basket b, float missionProbability,
+                             std::default_random_engine &engine)
     : cust(std::move(c)), basket(std::move(b)) {
     std::uniform_real_distribution<double> u(0.0, 1.0);
     if (cust->getTripPurpose() == Customer::TripPurpose::Mission ||
@@ -36,9 +36,9 @@ Agent::Agent(std::shared_ptr<Customer> c, Basket b, float missionProbability,
         cust->setBehavior(new DefaultBehavior());
 }
 
-bool Agent::update(float dt, const StoreGraph &store,
-                   CheckoutQueueManager *queueManager,
-                   CollisionManager *collisionManager) {
+bool CustomerVisit::update(float dt, const StoreGraph &store,
+                           CheckoutQueueManager *queueManager,
+                           CollisionManager *collisionManager) {
     bool alive = cust->update(dt, store, basket, queueManager, collisionManager);
     // Legacy flag: set if basket was already cleared externally.
     if (basket.getSize() == 0 && cust->getTotalSpent() > 0)
@@ -89,6 +89,45 @@ void Simulator::loadStore() {
         const Edge &edge = store_.edgeAt(e);
         cellVisitCounts_[static_cast<size_t>(e)].assign(edge.cells.size(), 0);
     }
+
+    // Spawn initial workers: simple fixed pool near stockroom/register nodes.
+    workers_.clear();
+    int nextWorkerId = 1;
+
+    // Helper lambdas to find representative nodes.
+    auto findFirstNodeOfType = [this](Node::NodeType type) -> int {
+        for (int i = 0; i < store_.numNodes(); ++i) {
+            if (store_.nodeAt(i).getNodeType() == type)
+                return i;
+        }
+        return -1;
+    };
+
+    const int stockroomNodeIdx = findFirstNodeOfType(Node::NodeType::Stockroom);
+    const int registerNodeIdx  = findFirstNodeOfType(Node::NodeType::Register);
+
+    // Spawn stockers
+    for (int i = 0; i < numStockers_; ++i) {
+        auto w = std::make_unique<Worker>(nextWorkerId++, true, false);
+        if (stockroomNodeIdx >= 0) {
+            const Node &n = store_.nodeAt(stockroomNodeIdx);
+            w->setPosition(n.getX(), n.getZ());
+        }
+        w->setSpeed(0.9);
+        workers_.push_back(std::move(w));
+    }
+
+    // Spawn cashiers
+    for (int i = 0; i < numCashiers_; ++i) {
+        auto w = std::make_unique<Worker>(nextWorkerId++, false, true);
+        if (registerNodeIdx >= 0) {
+            const Node &n = store_.nodeAt(registerNodeIdx);
+            w->setPosition(n.getX(), n.getZ());
+        }
+        w->setSpeed(0.9);
+        workers_.push_back(std::move(w));
+    }
+
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -104,6 +143,8 @@ void Simulator::run(double durationSeconds, float dt) {
 void Simulator::step(float dt) {
     spawnAgent(dt);
     updateAgents(dt);
+    generateTasks(dt);
+    updateWorkers(dt);
     removeDeadAgents();
     elapsedTime_ += dt;
     sampleQueues();
@@ -112,6 +153,7 @@ void Simulator::step(float dt) {
 void Simulator::reset() {
     agents_.clear();
     customerPool_.clear();
+    workers_.clear();
 
     {
         std::lock_guard<std::mutex> lk(transactionMutex_);
@@ -124,6 +166,7 @@ void Simulator::reset() {
     spawnTimer_        = 0.0f;
     elapsedTime_       = 0.0f;
     nextTransactionId_ = 1;
+    taskScanTimer_     = 0.0f;
 
     queueSampleTimes_.clear();
     queueLengthsHistory_.clear();
@@ -197,8 +240,8 @@ void Simulator::spawnAgent(float dt) {
 
     // Create customer + basket
     auto [custPtr, basket] = newCustomer(customerPool_, rng_);
-    auto ag = std::make_unique<Agent>(custPtr, std::move(basket),
-                                     missionProbability_, rng_);
+    auto ag = std::make_unique<CustomerVisit>(custPtr, std::move(basket),
+                                              missionProbability_, rng_);
 
     // Find the first entrance edge
     int startEdgeIdx = -1;
@@ -214,9 +257,9 @@ void Simulator::spawnAgent(float dt) {
         return;
     }
 
-    ag->cust->currentEdgeIndex = startEdgeIdx;
-    ag->cust->distOnEdge       = 0.0;
-    ag->cust->speed            = 0.75;
+    ag->cust->setCurrentEdgeIndex(startEdgeIdx);
+    ag->cust->setDistOnEdge(0.0);
+    ag->cust->setSpeed(0.75);
 
     // Set world position to the entrance node
     for (int i = 0; i < store_.numNodes(); ++i) {
@@ -317,8 +360,8 @@ void Simulator::updateAgents(float dt) {
                 auto [edgeIdx, cellIdx] = resolvePickCell(
                     ag->cust->getPosX(),
                     ag->cust->getPosZ(),
-                    ag->cust->currentEdgeIndex,
-                    ag->cust->distOnEdge,
+                    ag->cust->getCurrentEdgeIndex(),
+                    ag->cust->getDistOnEdge(),
                     sku);
 
                 if (edgeIdx >= 0 && cellIdx >= 0 &&
@@ -384,23 +427,23 @@ void Simulator::updateAgents(float dt) {
         }
 
         // ── Traffic heatmap sampling: increment cell visit counts ───────────
-        if (ag->cust && ag->cust->currentEdgeIndex >= 0 &&
-            ag->cust->currentEdgeIndex < store_.numEdges()) {
+        if (ag->cust && ag->cust->getCurrentEdgeIndex() >= 0 &&
+            ag->cust->getCurrentEdgeIndex() < store_.numEdges()) {
 
-            const Edge &edge = store_.edgeAt(ag->cust->currentEdgeIndex);
+            const Edge &edge = store_.edgeAt(ag->cust->getCurrentEdgeIndex());
             const double cellLen = edge.getCellLength();
 
             if (cellLen > 0.0 && !edge.cells.empty()) {
-                int cellIdx = static_cast<int>(ag->cust->distOnEdge / cellLen);
+                int cellIdx = static_cast<int>(ag->cust->getDistOnEdge() / cellLen);
                 if (cellIdx < 0)
                     cellIdx = 0;
                 if (cellIdx >= static_cast<int>(edge.cells.size()))
                     cellIdx = static_cast<int>(edge.cells.size()) - 1;
 
-                if (ag->cust->currentEdgeIndex <
+                if (ag->cust->getCurrentEdgeIndex() <
                     static_cast<int>(cellVisitCounts_.size())) {
                     auto &edgeCounts =
-                        cellVisitCounts_[static_cast<size_t>(ag->cust->currentEdgeIndex)];
+                        cellVisitCounts_[static_cast<size_t>(ag->cust->getCurrentEdgeIndex())];
                     if (cellIdx >= 0 &&
                         cellIdx < static_cast<int>(edgeCounts.size())) {
                         edgeCounts[static_cast<size_t>(cellIdx)]++;
@@ -419,7 +462,100 @@ void Simulator::updateAgents(float dt) {
     }
 }
 
-void Simulator::finalizeCheckout(Agent &agent) {
+void Simulator::updateWorkers(float dt) {
+    // Workers currently execute tasks in place; for the first debugging pass
+    // we do not include collision separation between workers/shelves.
+    // (CollisionManager is customer-typed in this codebase.)
+    for (auto &w : workers_) {
+        if (!w)
+            continue;
+        w->update(dt, store_, &queueManager_, nullptr);
+    }
+}
+
+void Simulator::generateTasks(float dt) {
+    taskScanTimer_ += dt;
+    if (taskScanTimer_ < taskScanInterval_)
+        return;
+    taskScanTimer_ = 0.0f;
+
+    const double now = static_cast<double>(elapsedTime_);
+
+    // Simple queue-based register tasks.
+    if (autoRegisterTasks_) {
+        const size_t laneCount = queueManager_.getLaneCount();
+        for (size_t lane = 0; lane < laneCount; ++lane) {
+            const int len =
+                static_cast<int>(queueManager_.getQueueLength(static_cast<int>(lane)));
+            const int threshold = 3;
+            if (len >= threshold) {
+                Task t;
+                t.type     = TaskType::ProcessRegister;
+                t.priority = len;
+                t.targetId = static_cast<int>(lane);
+                taskManager_.createTask(t, now);
+            }
+        }
+    }
+
+    // Very simple stock-shelves tasks: periodically choose a random edge that has cells.
+    if (autoStockTasks_ && store_.numEdges() > 0) {
+        std::uniform_int_distribution<int> edgeDist(0, std::max(0, store_.numEdges() - 1));
+        for (int i = 0; i < 2; ++i) { // at most a couple of tasks per scan
+            int eIdx = edgeDist(rng_);
+            if (eIdx < 0 || eIdx >= store_.numEdges())
+                continue;
+            const Edge &edge = store_.edgeAt(eIdx);
+            if (edge.getCellCount() == 0)
+                continue;
+            Task t;
+            t.type     = TaskType::StockShelves;
+            t.priority = 1;
+            t.targetId = eIdx;
+            taskManager_.createTask(t, now);
+        }
+    }
+
+    // Assign tasks to idle workers.
+    for (auto &w : workers_) {
+        if (!w)
+            continue;
+        if (w->hasTasks())
+            continue;
+        if (auto taskOpt = taskManager_.requestTaskForWorker(*w)) {
+            w->addTask(*taskOpt);
+        }
+    }
+}
+
+std::vector<WorkerSnapshot> Simulator::getWorkerSnapshots() const {
+    std::vector<WorkerSnapshot> out;
+    out.reserve(workers_.size());
+    for (const auto &wPtr : workers_) {
+        if (!wPtr)
+            continue;
+        const Worker &w = *wPtr;
+        WorkerSnapshot s;
+        s.id             = w.getId();
+        s.posX           = w.getPosX();
+        s.posZ           = w.getPosZ();
+        s.canStock       = w.canStock();
+        s.canServe       = w.canServe();
+        s.happiness      = w.getHappiness();
+        s.taskEfficiency = w.getTaskEfficiency();
+        if (const Task *t = w.currentTask()) {
+            s.hasTask      = true;
+            s.taskType     = t->type;
+            s.taskTargetId = t->targetId;
+        } else {
+            s.hasTask = false;
+        }
+        out.push_back(s);
+    }
+    return out;
+}
+
+void Simulator::finalizeCheckout(CustomerVisit &agent) {
     // Build timestamp string from current sim time
     const int    totalSec  = static_cast<int>(elapsedTime_);
     const int    hours     = totalSec / 3600;
@@ -452,7 +588,7 @@ void Simulator::removeDeadAgents() {
     // Two-pass: first finalize despawning agents, then erase them.
     // This avoids const_cast inside a remove_if lambda.
     for (auto &ag : agents_) {
-        if (!ag->cust || ag->cust->currentEdgeIndex == -1) {
+        if (!ag->cust || ag->cust->getCurrentEdgeIndex() == -1) {
             if (ag->cust) {
                 // If the agent despawns with unpaid items, generate a transaction.
                 if (!ag->hasPaid && ag->basket.getSize() > 0)
@@ -464,8 +600,8 @@ void Simulator::removeDeadAgents() {
 
     agents_.erase(
         std::remove_if(agents_.begin(), agents_.end(),
-                       [](const std::unique_ptr<Agent> &a) {
-                           return !a->cust || a->cust->currentEdgeIndex == -1;
+                       [](const std::unique_ptr<CustomerVisit> &a) {
+                           return !a->cust || a->cust->getCurrentEdgeIndex() == -1;
                        }),
         agents_.end());
 }

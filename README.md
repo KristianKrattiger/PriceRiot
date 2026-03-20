@@ -1,176 +1,166 @@
 # PriceRiot
 
-**PriceRiot** is a high-fidelity retail store simulation engine built in C++ with real-time visualisation and a Python analytics layer. It simulates autonomous customer agents moving through a YAML‑defined store layout, interacting with shelves, building baskets, and generating transaction data for downstream analysis.
+A retail store simulation engine for generating synthetic transaction data, studying customer behavior, and stress-testing store layouts. The core runs in C++17 and is exposed to Python via a pybind11 extension module. A FastAPI + Vue 3 web app, a Streamlit dashboard, and Jupyter notebooks sit on top for analysis, scenario comparison, and data ingestion.
 
-## Highlights
+For deeper architectural detail see **[cxx/docs/ARCHITECTURE.md](cxx/docs/ARCHITECTURE.md)** and the store config schema in **[cxx/docs/CONFIGURATION.md](cxx/docs/CONFIGURATION.md)**.
 
-- **Simulation engine (C++)**
-  - Agent-based customers with behaviour profiles and state machines.
-  - YAML-configurable store graph (nodes/edges/cells) with shelves and planograms.
-  - Navmesh + physics (A\* with funnel smoothing, collision avoidance, lane capacity).
-  - Shelf inventory and restocking (bays/faces/slots, stockboy, backstock pool).
-  - Basket building and transaction generation with CSV export.
+---
 
-- **Visualiser**
-  - SFML/ImGui window driving the core `Simulator`.
-  - ImGui controls for pause, time scale, spawn rate, and stats.
-  - Debug overlays for navmesh, physics obstacles/walls, node/edge labels.
+## What it does
 
-- **Analytics**
-  - `simulation` Python extension (pybind11) exposing `Simulator`, `Transaction`, `Customer`, etc.
-  - `python/analytics/` helpers for running sims and getting pandas DataFrames.
-  - Traffic heatmaps (per-edge, per-cell visits) and queue metrics (lengths over time).
-  - Jupyter notebooks demonstrating basket composition, traffic, and queues.
+- Spawns autonomous customer agents with demographics, shopping lists, and behavioral profiles navigating a YAML-defined store graph
+- Agents pathfind via A\* on a navmesh with SSFA funnel smoothing, agent-radius erosion, physics collision avoidance, and personal-space separation
+- Generates transaction records per customer: SKUs, quantities, prices, checkout queueing, satisfaction scoring
+- Worker agents (stockers, cashiers) accept prioritized tasks from a `TaskManager` — task compatibility, starvation mitigation, and happiness/efficiency coupling are all modeled
+- Exposes traffic heatmaps (per-shelf-cell visit counts) and queue depth time-series to Python
+- Runs headlessly from Python for data generation, or as a real-time SFML/ImGui visualiser
+- FastAPI + Vue 3 web app lets you configure runs, stream progress via SSE, compare KPIs and heatmaps across runs, and download results as CSV
+- POS ingestion pipeline cleans historical CSV data, maps SKUs, and extracts simulation parameters (spawn rate, basket size, price sensitivity)
 
-For a deeper architectural view (layers, data flows, modules), see  
-**[cxx/docs/ARCHITECTURE.md](cxx/docs/ARCHITECTURE.md)**.
+---
 
-## Project structure (high level)
+## Repository layout
 
-```text
+```
 PriceRiot/
-├── cxx/                         # C++ simulation engine
-│   ├── docs/
-│   │   ├── ARCHITECTURE.md      # Engine layering and data flows
-│   │   └── CONFIGURATION.md     # store.yaml schema (nodes/edges/planogram/queues)
-│   ├── agents/                  # Customer/staff, behaviours, baskets
-│   ├── environment/             # StoreGraph, cells, shelves, navmesh, physics, queues
-│   ├── engine/                  # Simulator (headless), SFML visualiser, navmesh debug tools
-│   ├── bindings/                # pybind11 module: simulation
-│   └── tools/                   # CSV/utilities and support scripts
+├── cxx/                        # C++17 source
+│   ├── agents/                 # Customer, Worker, Basket, behavior strategies
+│   ├── environment/            # StoreGraph, NavMesh, PhysicsWorld, Shelves, CheckoutQueues
+│   ├── engine/                 # Simulator (headless), SFML visualiser, TaskManager
+│   ├── bindings/               # pybind11 module: simulation
+│   ├── tools/                  # CSV/utility helpers
+│   └── docs/
+│       ├── ARCHITECTURE.md     # Layer diagram and data-flow descriptions
+│       └── CONFIGURATION.md    # store.yaml schema reference
 ├── python/
-│   ├── analytics/               # run_simulation helpers, DataFrame converters
-│   ├── dashboard/               # Streamlit dashboard (simulation + POS analysis)
-│   ├── ingestion/               # CSV ingestion, cleaning, SKU mapping, parameter extraction
-│   ├── webapp/                  # FastAPI+frontend service for scenario comparison and storage
-│   ├── run_analysis.py          # CLI to run a sim and export CSVs
-│   ├── main.py                  # FastAPI API (POST /sim/run) over the simulation module
-│   ├── simulate.py              # Thin wrapper around analytics.run_simulation for notebooks/scripts
-│   └── data_processing.py       # Example CSV analytics on external or historical datasets
+│   ├── analytics/              # run_simulation(), DataFrame converters, heatmaps
+│   ├── dashboard/              # Streamlit app (simulation + POS analysis modes)
+│   ├── ingestion/              # POS CSV cleaning, SKU mapping, parameter extraction
+│   ├── webapp/                 # FastAPI backend + Vue 3 frontend
+│   ├── run_analysis.py         # CLI: run sim → export CSVs
+│   ├── main.py                 # FastAPI entrypoint
+│   └── simulate.py             # Thin notebook/script wrapper
 ├── notebooks/
-│   ├── basic_analysis.ipynb     # Transactions/customers + basket composition
-│   └── queues_and_heatmaps.ipynb# Queue metrics and traffic heatmaps
+│   ├── basic_analysis.ipynb    # Transactions, customers, basket composition
+│   └── queues_and_heatmaps.ipynb
 ├── examples/
-│   ├── store_tiny.yaml          # Minimal store layout
-│   └── store_bottleneck.yaml    # Layout with a deliberate bottleneck
-├── data/
-│   ├── raw/                     # Input CSV datasets
-│   └── processed/               # Generated analytics outputs
-├── fonts/                       # Fonts used by the SFML/ImGui visualiser
-├── imgui.ini                    # ImGui layout/settings for the visualiser
-├── scripts/
-│   ├── build_and_test.ps1       # Windows: build + Python smoke tests
-│   └── build_and_test.sh        # Linux/macOS: build + Python smoke tests
-└── tests/
-    └── test_simulation.py       # Smoke/systemic tests for the simulation module
+│   ├── store_tiny.yaml
+│   ├── store_bottleneck.yaml
+│   ├── cowboy_market.yaml
+│   └── cowboy_market_two_registers.yaml
+├── tests/
+│   └── test_simulation.py      # Smoke/integration tests for the simulation module
+└── scripts/
+    ├── build_and_test.sh
+    └── build_and_test.ps1
 ```
 
-## Build & run quickstart
+---
+
+## Architecture
+
+Four layers. Keep them cleanly separated:
+
+| Layer | Location | Responsibility |
+|---|---|---|
+| **Drivers** | `cxx/engine/sim.cpp`, `python/`, `python/webapp/` | Consume the Simulator API; no business logic |
+| **Simulation Engine** | `cxx/engine/simulator.cpp` | Owns the loop, RNG, agents, graph, queues, metrics |
+| **Agent Layer** | `cxx/agents/` | Customer and Worker state machines, basket building, task execution |
+| **Environment Layer** | `cxx/environment/` | StoreGraph, NavMesh, PhysicsWorld, Shelves, CheckoutQueues |
+
+Key rules:
+- `simulator.cpp` has no SFML/ImGui — the visualiser and Python module drive it from outside
+- `environment/` knows nothing about `agents/`
+- New environment features go in `environment/`; new behaviors in `agents/`
+
+---
+
+## Build
 
 ### Prerequisites
 
-- **C++17** or later compiler (MSVC, Clang, or GCC).
-- **CMake 3.14+**.
-- **Python 3.10+** (for analytics and tests).
+- C++17 compiler (MSVC, Clang, or GCC)
+- CMake 3.14+
+- Python 3.10+ (must match the version used at CMake configure time)
+- SFML, ImGui-SFML, yaml-cpp, pybind11 — all fetched automatically by CMake
 
-Dependencies such as SFML, ImGui-SFML, yaml-cpp, and pybind11 are fetched automatically by CMake.
-
-### Build the simulator and Python module
-
-From the project root:
+### Build commands
 
 ```bash
-# One-time clone
-git clone <repository-url>
-cd PriceRiot-main
+# Recommended: builds + runs smoke tests
+.\scripts\build_and_test.ps1      # Windows PowerShell
+./scripts/build_and_test.sh       # Linux/macOS
 
-# Cross-platform build helper (recommended)
-# Windows PowerShell
-.\scripts\build_and_test.ps1
-
-# Linux/macOS
-./scripts/build_and_test.sh
-```
-
-These scripts:
-- Configure and build the C++ simulator and the `simulation` Python extension into `build/` (and `build/Release` on multi-config generators such as MSVC).
-- Run the Python smoke tests in `tests/test_simulation.py`.
-
-To run the raw CMake commands manually:
-
-```bash
+# Manual CMake (from repo root)
 mkdir build && cd build
 cmake ../cxx
 cmake --build . --config Release
 ```
 
-### Run the C++ visualiser
+Output: `build/` (single-config) or `build/Release/` (MSVC multi-config).
 
-From the `build/` directory (or wherever your CMake generator places binaries, e.g. `build/Release/` on multi-config generators):
-
-```bash
-./simulator                      # Uses store.yaml in the working directory
-./simulator ../examples/store_tiny.yaml
-./simulator ../examples/store_bottleneck.yaml
-```
-
-On Windows, the binary is typically `simulator.exe`.
-
-ImGui controls let you pause/resume, adjust spawn interval and time scale, inspect navmesh overlays, show node/edge labels, and export transactions to CSV.
-
-### Python module and tests
-
-The pybind module `simulation` is built into `build/` (and possibly `build/Release` on multi-config generators). To run tests from the project root:
+### PYTHONPATH
 
 ```bash
-# Windows PowerShell
-$env:PYTHONPATH = "build"
-python tests/test_simulation.py
-
 # Linux/macOS
-PYTHONPATH=build python tests/test_simulation.py
-```
+export PYTHONPATH=build:python
 
-The module is tied to the Python version used at build time. If you have multiple Python versions installed, run tests and analytics with the same interpreter you used for the CMake build.
-
-## Analytics quickstart
-
-### CLI: run a sim and export CSVs
-
-`python/run_analysis.py` wraps a headless `simulation.Simulator` run and writes analytics-friendly CSVs. It is also exposed as a module entry point.
-
-From the project root:
-
-```bash
 # Windows PowerShell
 $env:PYTHONPATH = "build;python"
-python -m python.run_analysis --duration 600 --store store.yaml
+```
 
-# Linux/macOS
+---
+
+## Running things
+
+### C++ visualiser
+
+```bash
+./build/simulator ../examples/store_tiny.yaml
+./build/simulator ../examples/cowboy_market.yaml
+```
+
+ImGui controls: pause/resume, time scale, spawn interval, stats overlay, navmesh/physics debug views.
+
+### Smoke tests
+
+```bash
+PYTHONPATH=build:python python tests/test_simulation.py
+```
+
+### Analytics CLI
+
+```bash
 PYTHONPATH=build:python python -m python.run_analysis --duration 600 --store store.yaml
+# Writes: data/processed/transactions.csv, data/processed/customers.csv
 ```
 
-This will:
-- Run a 600-second simulation using `store.yaml`.
-- Write `transactions.csv` and `customers.csv` into `data/processed/` by default.
-
-You can also point at example layouts:
+### Streamlit dashboard
 
 ```bash
-python -m python.run_analysis --duration 600 --store examples/store_bottleneck.yaml
+PYTHONPATH=build:python streamlit run python/dashboard/app.py
 ```
 
-### Python: use analytics helpers directly
-
-From the project root:
+### FastAPI + Vue 3 web app
 
 ```bash
-# Make sure the built module and python/ package are visible
-$env:PYTHONPATH = "build;python"  # Windows PowerShell
-# or: PYTHONPATH=build:python ...  # Linux/macOS
+# Backend
+PYTHONPATH=build:python uvicorn python.main:app --reload
+
+# Frontend (separate terminal)
+cd python/webapp/frontend && npm run dev
+# Open http://localhost:5173
 ```
 
-Then:
+### Jupyter notebooks
+
+```bash
+PYTHONPATH=build:python jupyter lab
+```
+
+---
+
+## Python analytics API
 
 ```python
 import analytics
@@ -183,144 +173,167 @@ result = analytics.run_simulation(
     seed=42,
 )
 
-transactions = result.transactions   # pandas DataFrame (one row per line item)
-customers = result.customers         # pandas DataFrame (one row per customer)
-sim = result.simulator               # underlying simulation.Simulator instance
+result.transactions   # pd.DataFrame — one row per line item
+result.customers      # pd.DataFrame — one row per customer
+result.simulator      # simulation.Simulator instance
 
-# Export CSVs explicitly if needed
-transactions.to_csv("transactions.csv", index=False)
-customers.to_csv("customers.csv", index=False)
-```
+# Heatmaps and queue metrics
+cell_counts = result.simulator.get_cell_heatmap()
+heatmap_df  = analytics.cell_heatmap_to_frame(cell_counts)
 
-Traffic and queue metrics are exposed via the simulator and converted to DataFrames via helpers:
-
-```python
-cell_counts = sim.get_cell_heatmap()
-heatmap_df = analytics.cell_heatmap_to_frame(cell_counts)
-
-times = sim.get_queue_sample_times()
-lengths = sim.get_queue_lengths_history()
+times    = result.simulator.get_queue_sample_times()
+lengths  = result.simulator.get_queue_lengths_history()
 queue_df = analytics.queue_metrics_to_frame(times, lengths)
 ```
 
-### Notebooks
+---
 
-For interactive analysis, launch Jupyter from the project root with the correct `PYTHONPATH`:
+## Current status
 
-```bash
-# Windows PowerShell
-$env:PYTHONPATH = "build;python"
-jupyter lab
+### Working
 
-# Linux/macOS
-PYTHONPATH=build:python jupyter lab
-```
+| Component | Notes |
+|---|---|
+| C++ simulation engine | Headless, deterministic, mutex-safe transaction access |
+| Customer agents | Demographics, trip purpose (StockUp/TopUp/Mission), impulse buying, basket building |
+| NavMesh pathfinding | A\* + SSFA funnel, agent-radius erosion, corner smoothing, waypoint-skip LOS |
+| Physics collision | AABB shelf obstacles trimmed at junctions, per-agent circle resolution |
+| Checkout queues | Multi-lane FIFO, service times, waypoint-based queue positioning |
+| Transaction recording | Full line-item detail (SKU, qty, price), satisfaction scoring |
+| Traffic heatmaps | Per-shelf-cell visit counts, exposed to Python |
+| Queue metrics | Per-lane depth sampled over time, exposed to Python |
+| Worker agents | State machine (Idle → MovingToTask → ExecutingTask), happiness/efficiency coupling |
+| TaskManager | Priority queue with starvation mitigation, worker-task compatibility matching |
+| pybind11 bindings | All core classes bound; `get_workers()` returns live snapshots as dicts |
+| Python analytics | `run_simulation()`, DataFrame converters, heatmaps, queue metrics |
+| POS ingestion pipeline | CSV cleaning, SKU mapping, parameter extraction from historical data |
+| FastAPI web app | Run config, SSE progress streaming, multi-run comparison, CSV download |
+| Vue 3 frontend | Run form, results view, workers panel, run comparison tab |
+| Streamlit dashboard | Simulation controls + charts, POS analysis mode |
+| Jupyter notebooks | End-to-end examples: transactions, heatmaps, queue time-series |
 
-Then open:
-- `notebooks/basic_analysis.ipynb` – end-to-end run producing transactions/customers and basic basket stats.
-- `notebooks/queues_and_heatmaps.ipynb` – visualise queue lengths over time and traffic heatmaps over edge/cell space.
+### Incomplete / in progress
 
-### Dashboard quickstart
+| Component | Gap |
+|---|---|
+| Worker spatial movement | `MovingToTask` state has no navmesh path — workers execute tasks in place |
+| Auto task generation | `generateTasks()` stub exists; does not yet monitor shelf levels or queue depth |
+| `set_worker_config` pybind11 binding | C++ method exists but not exposed; Python side has a silent `try/except` fallback |
+| POS → simulator param wiring | Ingestion extracts params but they don't feed into the webapp run config |
+| Webapp persistence | `SessionStore` is in-memory only; runs lost on server restart |
+| Unit tests | Only smoke/integration tests; no per-module unit tests |
 
-The Streamlit dashboard provides an interactive UI for running simulations and exploring results (including POS analytics).
+---
 
-From the project root, with the `simulation` module built and available:
+## Roadmap
 
-```bash
-# Windows PowerShell
-$env:PYTHONPATH = "build;python"
-streamlit run python/dashboard/app.py
+Priority order — each item tends to unblock the next.
 
-# Linux/macOS
-PYTHONPATH=build:python streamlit run python/dashboard/app.py
-```
+### P0 — Complete the worker subsystem
 
-The sidebar lets you switch between **Simulation** and **POS Analysis** modes, configure run parameters, and view charts and tables backed by the same analytics helpers.
+**1. Expose `set_worker_config` in pybind11** (`cxx/bindings/priceriot_bindings.cpp`)
+- The C++ method already exists on `Simulator`; just needs a `.def()` line
+- Remove the `try/except` fallback in `analytics/core.py` once bound
 
-## Current status and roadmap
+**2. Implement auto task generation in `simulator.cpp`**
+- `generateTasks(dt)`: scan edge cells below a restock threshold → emit `StockShelves` tasks to `TaskManager`
+- Monitor queue lengths above threshold → emit `ProcessRegister` tasks
+- This is the missing link that gives workers actual work to do
 
-### Completed
+**3. Implement worker spatial movement**
+- `Worker::update()` `MovingToTask` branch: call `NavMeshPathfinder::findPath()` to task target, follow waypoints the same way `Customer` does
+- On arrival: transition to `ExecutingTask`, apply the service effect (restock the cell / reduce queue length)
+- Expose worker positions to the renderer and to the webapp workers panel
 
-- Core C++ simulation engine with customers, shelves, restocking, and transactions.
-- Real-time SFML/ImGui visualiser backed by the headless `Simulator`.
-- Python `simulation` module (pybind11) with access to transactions and customers.
-- Python analytics helpers (`python/analytics/`) returning pandas DataFrames.
-- Traffic heatmaps (per-edge, per-cell visit counts) and queue metrics (lengths over time).
-- Smoke/systemic tests for construction, stepping, invariants, and metric exposure.
-- Streamlit dashboard for simulation and POS analysis (`python/dashboard/`).
-- FastAPI-based API (`python/main.py`) and web app (`python/webapp/`) for remote runs and scenario comparison.
-- Ingestion pipeline (`python/ingestion/`) to clean external POS data and map SKUs into the simulation schema.
+**4. Close the task lifecycle**
+- `StockShelves` completion → increment shelf inventory on the target edge
+- `ProcessRegister` completion → reduce queue length, credit service to the lane
+- Feed outcome back to `Worker` happiness and to `TaskManager` bookkeeping
 
-### Planned
+### P1 — Wire POS ingestion to the webapp
 
-- Multi-threaded simulation for larger scenarios.
-- ML models for churn prediction and demand forecasting tied to simulation outputs.
-- Layout and staffing optimisation loops powered by simulation outputs.
-- Optional streaming pipeline for real-time transaction feeds.
+**5. Auto-apply ingestion params in `simulation_runner.py`**
+- When a POS CSV is uploaded, call `param_extractor.extract()` and merge derived values (spawn interval, basket size multiplier, price sensitivity) into `RunConfig`
+- Pre-fill the run form in the frontend with extracted values; let the user override before submitting
 
-## Future vision
+**6. Show an ingestion summary panel in the frontend**
+- Top SKUs, inferred spawn rate, mean basket size displayed as a read-only "data profile" before the user runs
 
-PriceRiot is both a portfolio project and a prototype for simulation-driven retail analytics. Potential applications include:
+### P2 — Webapp hardening
 
-- **Store layout optimisation** through A/B testing in simulation.
-- **Staffing optimisation** based on observed traffic and queue patterns.
-- **Inventory management** with demand forecasting and stockout analysis.
-- **Customer journey analysis** and conversion optimisation.
-- **Price elasticity testing** in controlled, repeatable environments.
+**7. Persist runs across restarts**
+- Replace `SessionStore` with `aiosqlite` — single file, zero ops overhead
+- Store `RunResult` as a JSON blob; lazy-load CSV content on download request
+- Add `DELETE /api/runs/{run_id}` for cleanup
 
-## Contributing
+**8. Add `POST /api/runs/{run_id}/workers` endpoint**
+- Accept updated `num_stockers` / `num_cashiers` while a run is queued
+- Requires P0.1 (binding) to be done first
 
-This is a personal project, but suggestions and feedback are welcome.
+### P3 — Simulation fidelity
+
+**9. Demand-responsive pricing hook**
+- Track SKU sell-through rate per simulation window
+- Expose `set_sku_price(sku_id, price)` so an outer optimization loop can test dynamic pricing
+
+**10. Multi-run parameter sweeps**
+- `POST /api/sweeps` accepting a parameter grid (spawn_interval × mission_probability × num_stockers)
+- Run simulations in a thread pool; aggregate into a comparison DataFrame
+
+**11. Layout optimisation hook**
+- Expose an objective function (revenue/sqft, mean dwell time, queue p95) that an external optimizer can minimize by mutating `store.yaml` and re-running
+
+### P4 — ML integration
+
+**12. Churn prediction**
+- `customers_df` already has all features (loyalty, recency, frequency, income, family size)
+- Train a gradient-boosted classifier on synthetic data; expose via `/predict/churn`
+
+**13. Demand forecasting**
+- SKU sales time-series from repeated runs → ARIMA or Prophet baseline
+- Feed forecast back into restock thresholds for task generation (P0.2)
+
+**14. Staffing optimizer**
+- Binary-search over `num_cashiers` with repeated runs to meet a target queue p95 SLA
+- Expose as a one-click action in the webapp
+
+---
+
+## Common tasks
+
+### Add a new customer behavior
+
+1. Subclass `ICustomerBehavior` in `cxx/agents/customer_behavior.h/.cpp`
+2. Implement `decide(customer, ctx)` returning a `Decision`
+3. Wire it into `Simulator` construction or expose a factory
+4. Add a test in `tests/test_simulation.py`
+
+### Add a new metric
+
+1. Aggregate in `cxx/engine/simulator.cpp` (or the relevant `environment/` class)
+2. Expose via a getter on `Simulator`
+3. Bind in `cxx/bindings/priceriot_bindings.cpp`
+4. Add a DataFrame converter in `python/analytics/core.py`
+5. Smoke-test in `tests/test_simulation.py`
+
+### Add a new store layout
+
+1. Create `examples/my_layout.yaml` following `cxx/docs/CONFIGURATION.md`
+2. Test: `PYTHONPATH=build:python python tests/test_simulation.py`
+3. Visualise: `./build/simulator examples/my_layout.yaml`
+
+---
+
+## Pitfalls
+
+- **Python version mismatch** — the `simulation` module is compiled against a specific CPython ABI; use the same interpreter for build and runtime
+- **SFML in headless code** — never include SFML/ImGui headers in `simulator.cpp`, `agents/`, or `environment/`; the pybind11 module builds without SFML
+- **MSVC multi-config output** — binaries land in `build/Release/`, not `build/`; update `PYTHONPATH` accordingly
+- **In-memory session store** — the webapp loses all run history on restart until SQLite persistence is added (P2.7)
+- **`set_worker_config` not yet bound** — calling it from Python silently fails via a `try/except` in `analytics/core.py`; tracked in P0.1
+
+---
 
 ## License
 
-MIT License
-
-## Configuration
-
-Store layout is defined in `store.yaml` (or an alternative file passed to the simulator) and includes:
-- `nodes` – Entrances, Exits, Junctions, Registers, Stockrooms (with positions and traffic parameters).
-- `edges` – Aisles between nodes, including widths, free speeds, and shelf protrusions.
-- `planogram` – Per-edge shelf sides (bays/faces/slots) with SKUs and on-shelf quantities.
-- `checkout_queues` – Waypoints and processing times for register queues.
-
-For the full schema and examples, see:
-- **[cxx/docs/CONFIGURATION.md](cxx/docs/CONFIGURATION.md)**
-- Example layouts in `examples/store_tiny.yaml` and `examples/store_bottleneck.yaml`.
-
-## Current status and roadmap
-
-### Completed
-
-- Core C++ simulation engine with customers, shelves, restocking, and transactions.
-- Real-time SFML/ImGui visualiser backed by the headless `Simulator`.
-- Python `simulation` module (pybind11) with access to transactions and customers.
-- Python analytics helpers (`python/analytics/`) returning pandas DataFrames.
-- Traffic heatmaps (per-edge, per-cell visit counts) and queue metrics (lengths over time).
-- Smoke/systemic tests for construction, stepping, invariants, and metric exposure.
-
-### Planned
-
-- Multi-threaded simulation for larger scenarios.
-- Rich dashboard visualisation (e.g. Streamlit) for traffic and queue analytics.
-- ML models for churn prediction and demand forecasting.
-- Layout and staffing optimisation loops powered by simulation outputs.
-- Optional streaming pipeline for real-time transaction feeds.
-
-## Future vision
-
-PriceRiot is both a portfolio project and a prototype for simulation-driven retail analytics. Potential applications include:
-
-- **Store layout optimisation** through A/B testing in simulation.
-- **Staffing optimisation** based on observed traffic and queue patterns.
-- **Inventory management** with demand forecasting and stockout analysis.
-- **Customer journey analysis** and conversion optimisation.
-- **Price elasticity testing** in controlled, repeatable environments.
-
-## Contributing
-
-This is a personal project, but suggestions and feedback are welcome.
-
-## License
-
-MIT License
+MIT

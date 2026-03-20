@@ -45,32 +45,42 @@ void PhysicsGenerator::generateShelfObstacles(const StoreGraph &graph, const Sto
         double perpX = -dirZ; // 90 degree rotation
         double perpZ = dirX;
 
-        // Create obstacles for left shelf
-        if (edgeGeo.shelfLeft > 0.01) {
-            // Shelf extends perpendicular from edge
-            double shelfWidth = 0.3; // Shelf depth (meters)
-            double shelfStartX = edgeGeo.startX + perpX * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
-            double shelfStartZ = edgeGeo.startZ + perpZ * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
-            double shelfEndX = edgeGeo.endX + perpX * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
-            double shelfEndZ = edgeGeo.endZ + perpZ * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
+        // Trim shelf ends inward so they don't protrude into junction/node areas.
+        // Previously the AABB was expanded ±shelfWidth/2 in ALL directions, causing a 0.15 m
+        // overhang past each edge endpoint that agents would clip when turning at junctions.
+        // We now trim by kNodeInset (matching the navmesh node polygon inset) so the shelf
+        // runs only through the actual aisle corridor, not into the crossing area.
+        static constexpr double kShelfDepth   = 0.3;  // shelf unit depth (metres)
+        static constexpr double kShelfEndTrim = 1.0;  // > kNodeInset(0.6): extra clearance at junctions
 
-            // Create AABB for shelf obstacle
-            AABB shelfObstacle(shelfStartX - shelfWidth / 2.0, shelfStartZ - shelfWidth / 2.0,
-                               shelfEndX + shelfWidth / 2.0, shelfEndZ + shelfWidth / 2.0);
-            world.addObstacle(shelfObstacle);
-        }
+        // Trimmed edge endpoints (shelf starts/ends kShelfEndTrim inside each node).
+        const double trimSx = edgeGeo.startX + dirX * kShelfEndTrim;
+        const double trimSz = edgeGeo.startZ + dirZ * kShelfEndTrim;
+        const double trimEx = edgeGeo.endX   - dirX * kShelfEndTrim;
+        const double trimEz = edgeGeo.endZ   - dirZ * kShelfEndTrim;
 
-        // Create obstacles for right shelf
-        if (edgeGeo.shelfRight > 0.01) {
-            double shelfWidth = 0.3;
-            double shelfStartX = edgeGeo.startX - perpX * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
-            double shelfStartZ = edgeGeo.startZ - perpZ * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
-            double shelfEndX = edgeGeo.endX - perpX * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
-            double shelfEndZ = edgeGeo.endZ - perpZ * (edgeGeo.width / 2.0 + shelfWidth / 2.0);
+        // Only create a shelf if there is still length left after trimming.
+        const bool hasTrimmedLength = (edgeLength > 2.0 * kShelfEndTrim + 0.1);
 
-            AABB shelfObstacle(shelfStartX - shelfWidth / 2.0, shelfStartZ - shelfWidth / 2.0,
-                               shelfEndX + shelfWidth / 2.0, shelfEndZ + shelfWidth / 2.0);
-            world.addObstacle(shelfObstacle);
+        // Helper lambda: build an AABB from the 4 corners of a shelf strip so the
+        // rectangle is correct for any aisle angle (no spurious end-cap expansion).
+        auto makeShelfAABB = [&](double side) -> AABB {
+            // side = +1 for left (+perp), -1 for right (-perp)
+            double p0x = trimSx + perpX * side * (edgeGeo.width / 2.0);
+            double p0z = trimSz + perpZ * side * (edgeGeo.width / 2.0);
+            double p1x = trimSx + perpX * side * (edgeGeo.width / 2.0 + kShelfDepth);
+            double p1z = trimSz + perpZ * side * (edgeGeo.width / 2.0 + kShelfDepth);
+            double p2x = trimEx + perpX * side * (edgeGeo.width / 2.0);
+            double p2z = trimEz + perpZ * side * (edgeGeo.width / 2.0);
+            double p3x = trimEx + perpX * side * (edgeGeo.width / 2.0 + kShelfDepth);
+            double p3z = trimEz + perpZ * side * (edgeGeo.width / 2.0 + kShelfDepth);
+            return AABB(std::min({p0x, p1x, p2x, p3x}), std::min({p0z, p1z, p2z, p3z}),
+                        std::max({p0x, p1x, p2x, p3x}), std::max({p0z, p1z, p2z, p3z}));
+        };
+
+        if (hasTrimmedLength) {
+            if (edgeGeo.shelfLeft  > 0.01) world.addObstacle(makeShelfAABB(+1.0));
+            if (edgeGeo.shelfRight > 0.01) world.addObstacle(makeShelfAABB(-1.0));
         }
     }
 }

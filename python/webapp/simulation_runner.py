@@ -118,6 +118,10 @@ class SimulationRunner:
                 spawn_interval=config.spawn_interval,
                 mission_probability=config.mission_probability,
                 seed=config.random_seed,
+                num_stockers=config.num_stockers,
+                num_cashiers=config.num_cashiers,
+                auto_stock_tasks=config.auto_stock_tasks,
+                auto_register_tasks=config.auto_register_tasks,
             )
 
             transactions_csv = sim_result.transactions.to_csv(index=False)
@@ -175,6 +179,7 @@ class SimulationRunner:
                 queue_data=queue_data,
                 traffic_edges=traffic_edges,
                 kpis=kpis,
+                workers=list(sim_result.simulator.get_workers()) if hasattr(sim_result.simulator, "get_workers") else None,
             )
 
             yield self._sse_event(

@@ -127,6 +127,10 @@ def run_simulation(
     mission_probability: float = 0.5,
     seed: int = 0,
     dt: float = 1.0 / 60.0,
+    num_stockers: int = 2,
+    num_cashiers: int = 1,
+    auto_stock_tasks: bool = True,
+    auto_register_tasks: bool = True,
 ) -> SimulationResult:
     """
     Run a headless simulation and return results as pandas DataFrames.
@@ -143,6 +147,21 @@ def run_simulation(
         mission_probability=mission_probability,
         seed=seed,
     )
+    # Apply simple worker configuration if the bindings expose them.
+    if hasattr(sim, "set_worker_config"):
+        try:
+            sim.set_worker_config(
+                num_stockers=num_stockers,
+                num_cashiers=num_cashiers,
+                auto_stock_tasks=auto_stock_tasks,
+                auto_register_tasks=auto_register_tasks,
+            )
+        except TypeError:
+            # Older builds may not support keyword args; fall back silently.
+            try:
+                sim.set_worker_config(num_stockers, num_cashiers, auto_stock_tasks, auto_register_tasks)
+            except Exception:
+                pass
     sim.run(duration_seconds, dt=dt)
 
     tx_df = transactions_to_frame(sim.get_transactions())
@@ -157,6 +176,10 @@ def run_simulation_to_csv(
     mission_probability: float = 0.5,
     seed: int = 0,
     dt: float = 1.0 / 60.0,
+    num_stockers: int = 2,
+    num_cashiers: int = 1,
+    auto_stock_tasks: bool = True,
+    auto_register_tasks: bool = True,
     output_dir: Optional[str] = None,
 ) -> SimulationResult:
     """
@@ -178,6 +201,10 @@ def run_simulation_to_csv(
         mission_probability=mission_probability,
         seed=seed,
         dt=dt,
+        num_stockers=num_stockers,
+        num_cashiers=num_cashiers,
+        auto_stock_tasks=auto_stock_tasks,
+        auto_register_tasks=auto_register_tasks,
     )
 
     result.transactions.to_csv(os.path.join(output_dir, "transactions.csv"), index=False)

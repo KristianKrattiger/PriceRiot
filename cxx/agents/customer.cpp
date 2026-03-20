@@ -27,13 +27,15 @@ using AgentLogStream = std::conditional_t<kAgentLogEnabled, std::ofstream, NullL
 
 // Default ctor
 Customer::Customer()
-    : id(0), annualIncome(0.0), totalSpent(0.0), averageSpend(0.0), loyaltyRating(0.0), weight(0.0),
+    : Agent(0),
+      annualIncome(0.0), totalSpent(0.0), averageSpend(0.0), loyaltyRating(0.0), weight(0.0),
       daysAsCust(0), numPurchases(0), numReturns(0), lastPurchaseInDays(0), age(0), familySize(1),
       promotionResponse(0.0), churn(false) {}
 
 // 4-arg ctor
 Customer::Customer(const int id, double annualIncome_, int age_, std::string gender_)
-    : id(id), annualIncome(annualIncome_), totalSpent(0.0), averageSpend(0.0), loyaltyRating(0.0),
+    : Agent(id),
+      annualIncome(annualIncome_), totalSpent(0.0), averageSpend(0.0), loyaltyRating(0.0),
       weight(0.0), daysAsCust(0), numPurchases(0), numReturns(0), lastPurchaseInDays(0), age(age_),
       familySize(1), gender(std::move(gender_)), promotionResponse(0.0), churn(false) {}
 
@@ -82,17 +84,20 @@ bool Customer::update(const float dt, const StoreGraph &store, const Basket &bas
                 behaviorState.dwellTicks--;
             break;
 
-        case Decision::Move:
-            distOnEdge += speed * dt;
-            if (currentEdgeIndex != -1) {
-                if (double len = store.edgeAt(currentEdgeIndex).getLength(); distOnEdge > len + 1.0)
-                    distOnEdge = len;
+        case Decision::Move: {
+            const double newDist = getDistOnEdge() + getSpeed() * dt;
+            if (getCurrentEdgeIndex() != -1) {
+                const double len = store.edgeAt(getCurrentEdgeIndex()).getLength();
+                setDistOnEdge(newDist > len + 1.0 ? len : newDist);
+            } else {
+                setDistOnEdge(newDist);
             }
             break;
+        }
 
         case Decision::SwitchEdge:
-            currentEdgeIndex = dec.targetId;
-            distOnEdge = 0.0;
+            setCurrentEdgeIndex(dec.targetId);
+            setDistOnEdge(0.0);
             behaviorState.lastShopCell = -1;
             break;
 
@@ -105,9 +110,9 @@ bool Customer::update(const float dt, const StoreGraph &store, const Basket &bas
 
         case Decision::Despawn:
             // #region agent log
-            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer.cpp:Despawn_handled\",\"message\":\"Despawn decision processed\",\"data\":{\"customerId\":" << id << ",\"prevEdgeIdx\":" << currentEdgeIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer.cpp:Despawn_handled\",\"message\":\"Despawn decision processed\",\"data\":{\"customerId\":" << getId() << ",\"prevEdgeIdx\":" << getCurrentEdgeIndex() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
             // #endregion
-            currentEdgeIndex = -1;
+            setCurrentEdgeIndex(-1);
             return false;
     }
 
@@ -146,7 +151,7 @@ int recalcBasketSize(const std::shared_ptr<Customer> &customer, std::default_ran
 
 // --- Mutators ---
 void Customer::setId(const int id) {
-    this->id = id;
+    Agent::setId(id);
 }
 void Customer::setLoyaltyRating(const double rating) {
     loyaltyRating = rating;
