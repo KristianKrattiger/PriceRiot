@@ -192,6 +192,8 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 
 ### Working
 
+**Simulation core**
+
 | Component | Notes |
 |---|---|
 | C++ simulation engine | Headless, deterministic, mutex-safe transaction access |
@@ -202,13 +204,37 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 | Transaction recording | Full line-item detail (SKU, qty, price), satisfaction scoring |
 | Traffic heatmaps | Per-shelf-cell visit counts, exposed to Python |
 | Queue metrics | Per-lane depth sampled over time, exposed to Python |
-| Worker agents | State machine (Idle → MovingToTask → ExecutingTask), happiness/efficiency coupling |
+
+**Worker subsystem**
+
+| Component | Notes |
+|---|---|
+| Worker agents | Full state machine: workers pathfind to task targets via navmesh before executing |
+| Worker task lifecycle | `StockShelves` completion restocks edge shelf cells (3 units/slot); happiness bumped on finish |
 | TaskManager | Priority queue with starvation mitigation, worker-task compatibility matching |
+| Auto task generation | `generateTasks()` monitors queue depth and shelf levels; assigns tasks to idle workers |
+| `set_worker_config` binding | Fully exposed in pybind11; Python analytics calls it directly |
+
+**Python / analytics layer**
+
+| Component | Notes |
+|---|---|
 | pybind11 bindings | All core classes bound; `get_workers()` returns live snapshots as dicts |
 | Python analytics | `run_simulation()`, DataFrame converters, heatmaps, queue metrics |
 | POS ingestion pipeline | CSV cleaning, SKU mapping, parameter extraction from historical data |
-| FastAPI web app | Run config, SSE progress streaming, multi-run comparison, CSV download |
-| Vue 3 frontend | Run form, results view, workers panel, run comparison tab |
+| POS → run wiring | `extract_params()` auto-applied at run time; spawn interval + mission probability overridden from data when at defaults |
+
+**Webapp (FastAPI + Vue 3)**
+
+| Component | Notes |
+|---|---|
+| FastAPI backend | Run config, SSE progress streaming, multi-run comparison, CSV download |
+| SQLite persistence | Runs stored in `data/priceriot.db`; CSV blobs on disk in `data/runs/{id}/`; survives restarts |
+| `DELETE /api/runs/{id}` | Removes run from DB and cleans up CSV files |
+| `POST /api/runs/{id}/workers` | Updates stocker/cashier counts for queued runs |
+| `GET /api/runs/{id}/profile` | Returns POS-derived ingestion summary |
+| Vue 3 frontend | Run form, results view, workers panel (with Apply button), run comparison tab |
+| Ingestion profile panel | `IngestionProfile.vue` shows spawn rate, basket size, mission %, top SKUs after a POS-backed run |
 | Streamlit dashboard | Simulation controls + charts, POS analysis mode |
 | Jupyter notebooks | End-to-end examples: transactions, heatmaps, queue time-series |
 
@@ -216,11 +242,6 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 
 | Component | Gap |
 |---|---|
-| Worker spatial movement | `MovingToTask` state has no navmesh path — workers execute tasks in place |
-| Auto task generation | `generateTasks()` stub exists; does not yet monitor shelf levels or queue depth |
-| `set_worker_config` pybind11 binding | C++ method exists but not exposed; Python side has a silent `try/except` fallback |
-| POS → simulator param wiring | Ingestion extracts params but they don't feed into the webapp run config |
-| Webapp persistence | `SessionStore` is in-memory only; runs lost on server restart |
 | Unit tests | Only smoke/integration tests; no per-module unit tests |
 
 ---
@@ -229,71 +250,30 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 
 Priority order — each item tends to unblock the next.
 
-### P0 — Complete the worker subsystem
-
-**1. Expose `set_worker_config` in pybind11** (`cxx/bindings/priceriot_bindings.cpp`)
-- The C++ method already exists on `Simulator`; just needs a `.def()` line
-- Remove the `try/except` fallback in `analytics/core.py` once bound
-
-**2. Implement auto task generation in `simulator.cpp`**
-- `generateTasks(dt)`: scan edge cells below a restock threshold → emit `StockShelves` tasks to `TaskManager`
-- Monitor queue lengths above threshold → emit `ProcessRegister` tasks
-- This is the missing link that gives workers actual work to do
-
-**3. Implement worker spatial movement**
-- `Worker::update()` `MovingToTask` branch: call `NavMeshPathfinder::findPath()` to task target, follow waypoints the same way `Customer` does
-- On arrival: transition to `ExecutingTask`, apply the service effect (restock the cell / reduce queue length)
-- Expose worker positions to the renderer and to the webapp workers panel
-
-**4. Close the task lifecycle**
-- `StockShelves` completion → increment shelf inventory on the target edge
-- `ProcessRegister` completion → reduce queue length, credit service to the lane
-- Feed outcome back to `Worker` happiness and to `TaskManager` bookkeeping
-
-### P1 — Wire POS ingestion to the webapp
-
-**5. Auto-apply ingestion params in `simulation_runner.py`**
-- When a POS CSV is uploaded, call `param_extractor.extract()` and merge derived values (spawn interval, basket size multiplier, price sensitivity) into `RunConfig`
-- Pre-fill the run form in the frontend with extracted values; let the user override before submitting
-
-**6. Show an ingestion summary panel in the frontend**
-- Top SKUs, inferred spawn rate, mean basket size displayed as a read-only "data profile" before the user runs
-
-### P2 — Webapp hardening
-
-**7. Persist runs across restarts**
-- Replace `SessionStore` with `aiosqlite` — single file, zero ops overhead
-- Store `RunResult` as a JSON blob; lazy-load CSV content on download request
-- Add `DELETE /api/runs/{run_id}` for cleanup
-
-**8. Add `POST /api/runs/{run_id}/workers` endpoint**
-- Accept updated `num_stockers` / `num_cashiers` while a run is queued
-- Requires P0.1 (binding) to be done first
-
 ### P3 — Simulation fidelity
 
-**9. Demand-responsive pricing hook**
+**7. Demand-responsive pricing hook**
 - Track SKU sell-through rate per simulation window
 - Expose `set_sku_price(sku_id, price)` so an outer optimization loop can test dynamic pricing
 
-**10. Multi-run parameter sweeps**
+**8. Multi-run parameter sweeps**
 - `POST /api/sweeps` accepting a parameter grid (spawn_interval × mission_probability × num_stockers)
 - Run simulations in a thread pool; aggregate into a comparison DataFrame
 
-**11. Layout optimisation hook**
+**9. Layout optimisation hook**
 - Expose an objective function (revenue/sqft, mean dwell time, queue p95) that an external optimizer can minimize by mutating `store.yaml` and re-running
 
 ### P4 — ML integration
 
-**12. Churn prediction**
+**10. Churn prediction**
 - `customers_df` already has all features (loyalty, recency, frequency, income, family size)
 - Train a gradient-boosted classifier on synthetic data; expose via `/predict/churn`
 
-**13. Demand forecasting**
+**11. Demand forecasting**
 - SKU sales time-series from repeated runs → ARIMA or Prophet baseline
-- Feed forecast back into restock thresholds for task generation (P0.2)
+- Feed forecast back into restock thresholds for task generation
 
-**14. Staffing optimizer**
+**12. Staffing optimizer**
 - Binary-search over `num_cashiers` with repeated runs to meet a target queue p95 SLA
 - Expose as a one-click action in the webapp
 
@@ -329,8 +309,7 @@ Priority order — each item tends to unblock the next.
 - **Python version mismatch** — the `simulation` module is compiled against a specific CPython ABI; use the same interpreter for build and runtime
 - **SFML in headless code** — never include SFML/ImGui headers in `simulator.cpp`, `agents/`, or `environment/`; the pybind11 module builds without SFML
 - **MSVC multi-config output** — binaries land in `build/Release/`, not `build/`; update `PYTHONPATH` accordingly
-- **In-memory session store** — the webapp loses all run history on restart until SQLite persistence is added (P2.7)
-- **`set_worker_config` not yet bound** — calling it from Python silently fails via a `try/except` in `analytics/core.py`; tracked in P0.1
+- **SQLite DB location** — `data/priceriot.db` is created relative to the project root on first webapp start; CSV blobs land in `data/runs/{run_id}/`
 
 ---
 

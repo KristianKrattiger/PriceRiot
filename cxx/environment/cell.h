@@ -79,6 +79,12 @@ class EdgeCell {
     // Sim tick
     void tick(float dt_s) noexcept;
 
+    /** Restore stock on both shelf sides (called when a stocker completes a task). */
+    void restock(std::uint16_t qty_per_slot) noexcept {
+        leftSide.addStock(qty_per_slot);
+        rightSide.addStock(qty_per_slot);
+    }
+
     // Traversal policy
     [[nodiscard]] Traversal traversal() const noexcept {
         return traversal_;

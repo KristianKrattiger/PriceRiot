@@ -52,6 +52,19 @@
       </div>
     </div>
 
+    <div class="flex items-center gap-3">
+      <button
+        class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium
+               bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:opacity-40"
+        :disabled="!runId || applyStatus === 'saving'"
+        @click="applyWorkerConfig"
+      >
+        {{ applyStatus === 'saving' ? 'Applying…' : 'Apply to queued run' }}
+      </button>
+      <span v-if="applyStatus === 'ok'" class="text-xs text-emerald-400">Saved</span>
+      <span v-if="applyStatus === 'error'" class="text-xs text-rose-400">{{ applyError }}</span>
+    </div>
+
     <div class="border border-slate-800 rounded-lg overflow-hidden">
       <table class="min-w-full text-xs">
         <thead class="bg-slate-900/70 text-slate-300">
@@ -107,7 +120,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useSimulationStore } from "../stores/simulation";
-import { listWorkers } from "../api/client";
+import { listWorkers, updateRunWorkers } from "../api/client";
 
 const store = useSimulationStore();
 
@@ -118,6 +131,8 @@ const numStockers = ref(2);
 const numCashiers = ref(1);
 const autoStockTasks = ref(true);
 const autoRegisterTasks = ref(true);
+const applyStatus = ref(""); // '', 'saving', 'ok', 'error'
+const applyError = ref("");
 
 async function loadWorkers() {
   if (!runId.value) {
@@ -148,6 +163,20 @@ function taskTypeLabel(t) {
 onMounted(() => {
   loadWorkers();
 });
+
+async function applyWorkerConfig() {
+  if (!runId.value) return;
+  applyStatus.value = "saving";
+  applyError.value = "";
+  try {
+    await updateRunWorkers(runId.value, numStockers.value, numCashiers.value);
+    applyStatus.value = "ok";
+    setTimeout(() => { applyStatus.value = ""; }, 2000);
+  } catch (e) {
+    applyStatus.value = "error";
+    applyError.value = e?.response?.data?.detail ?? "Failed to update";
+  }
+}
 
 watch(runId, () => {
   loadWorkers();

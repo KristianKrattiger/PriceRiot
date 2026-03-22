@@ -8,3 +8,4 @@ numpy
 seaborn
 matplotlib
 rapidfuzz
+aiosqlite~=0.22.1

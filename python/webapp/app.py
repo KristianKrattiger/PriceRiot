@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from contextlib import asynccontextmanager
 from typing import List
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, Form
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 import yaml
@@ -22,7 +24,13 @@ from .simulation_runner import simulation_runner
 from .storage import session_store
 
 
-app = FastAPI(title="PriceRiot Webapp API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await session_store.init()
+    yield
+
+
+app = FastAPI(title="PriceRiot Webapp API", lifespan=lifespan)
 
 # Configure CORS once at app creation time
 app.add_middleware(
@@ -97,20 +105,20 @@ async def create_run(
         pos_data=pos_path,
     )
 
-    run_id = session_store.create_run(config)
-    run = session_store.get_run(run_id)
+    run_id = await session_store.create_run(config)
+    run = await session_store.async_get_run(run_id)
     assert run is not None
     return run
 
 
 @app.get("/api/runs", response_model=List[RunResult])
-def list_runs() -> List[RunResult]:
-    return session_store.list_runs()
+async def list_runs() -> List[RunResult]:
+    return await session_store.async_list_runs()
 
 
 @app.get("/api/runs/{run_id}", response_model=RunResult)
-def get_run(run_id: str) -> RunResult:
-    run = session_store.get_run(run_id)
+async def get_run(run_id: str) -> RunResult:
+    run = await session_store.async_get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return run
@@ -136,21 +144,15 @@ def compare_runs(body: ComparisonRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _materialize_csv(run_id: str, kind: str) -> str:
-    run = session_store.get_run(run_id)
+async def _materialize_csv(run_id: str, kind: str) -> str:
+    run = await session_store.async_get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     if run.status != RunStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Run is not completed")
 
-    if kind == "transactions":
-        contents = run.transactions_csv
-        filename = "transactions.csv"
-    elif kind == "customers":
-        contents = run.customers_csv
-        filename = "customers.csv"
-    else:
-        raise HTTPException(status_code=400, detail="Unknown CSV kind")
+    contents = session_store.get_csv(run_id, kind)
+    filename = "transactions.csv" if kind == "transactions" else "customers.csv"
 
     if not contents:
         raise HTTPException(status_code=404, detail="No CSV data available")
@@ -163,21 +165,59 @@ def _materialize_csv(run_id: str, kind: str) -> str:
 
 
 @app.get("/api/runs/{run_id}/transactions.csv")
-def download_transactions_csv(run_id: str):
-    path = _materialize_csv(run_id, "transactions")
+async def download_transactions_csv(run_id: str):
+    path = await _materialize_csv(run_id, "transactions")
     return FileResponse(path, media_type="text/csv", filename="transactions.csv")
 
 
 @app.get("/api/runs/{run_id}/customers.csv")
-def download_customers_csv(run_id: str):
-    path = _materialize_csv(run_id, "customers")
+async def download_customers_csv(run_id: str):
+    path = await _materialize_csv(run_id, "customers")
     return FileResponse(path, media_type="text/csv", filename="customers.csv")
 
 
+@app.get("/api/runs/{run_id}/profile")
+async def get_ingestion_profile(run_id: str):
+    """Return the POS-derived ingestion profile for a completed run."""
+    run = await session_store.async_get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.ingestion_profile is None:
+        raise HTTPException(status_code=404, detail="No ingestion profile available for this run")
+    return run.ingestion_profile
+
+
+@app.delete("/api/runs/{run_id}", status_code=204)
+async def delete_run(run_id: str) -> None:
+    deleted = await session_store.async_delete_run(run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+
+class WorkerConfigUpdate(BaseModel):
+    num_stockers: int
+    num_cashiers: int
+
+
+@app.post("/api/runs/{run_id}/workers", status_code=200)
+async def update_run_workers(run_id: str, body: WorkerConfigUpdate):
+    """Update worker counts for a queued run (before it starts executing)."""
+    run = await session_store.async_get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status != RunStatus.QUEUED:
+        raise HTTPException(status_code=400, detail="Run must be in queued state to update workers")
+    updated_config = run.config.copy(
+        update={"num_stockers": body.num_stockers, "num_cashiers": body.num_cashiers}
+    )
+    await session_store.async_update_run(run_id, config=updated_config)
+    return {"ok": True}
+
+
 @app.get("/api/workers")
-def get_workers(run_id: str):
+async def get_workers(run_id: str):
     """Return worker snapshots for a completed run."""
-    run = session_store.get_run(run_id)
+    run = await session_store.async_get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     if run.status != RunStatus.COMPLETED:

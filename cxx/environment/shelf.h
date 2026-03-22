@@ -73,6 +73,19 @@ struct ShelfSide {
 
     Bay *try_get(std::uint16_t idx) noexcept;
     [[nodiscard]] const Bay *try_get(std::uint16_t idx) const noexcept;
+
+    /** Restore stock: add qty units to every non-empty slot on this side. */
+    void addStock(std::uint16_t qty) noexcept {
+        for (std::size_t b = 0; b < bay_count; ++b) {
+            for (std::size_t f = 0; f < bays[b].face_count; ++f) {
+                for (std::size_t s = 0; s < bays[b].faces[f].slot_count; ++s) {
+                    auto &slot = bays[b].faces[f].slots[s];
+                    if (slot.sku_id != 0)
+                        slot.qty_on_face += qty;
+                }
+            }
+        }
+    }
 };
 
 // -----------------------------

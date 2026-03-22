@@ -326,21 +326,6 @@ void Simulator::updateAgents(float dt) {
 
     bool hasPhysics = store_.hasPhysicsWorld();
     CollisionManager *cmPtr = hasPhysics ? &collisionManager_ : nullptr;
-    // #region agent log
-    {
-        static int tickCount = 0;
-        if (agents_.size() > 0 && (tickCount++ % 60 == 0)) {
-            const char *logPath = std::getenv("PRICERIOT_DEBUG_LOG");
-            if (!logPath || !logPath[0]) logPath = "C:/Users/krist/Projects/PriceRiot/debug-01e413.log";
-            std::ofstream lf(logPath, std::ios::app);
-            if (lf) {
-                auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                lf << "{\"sessionId\":\"01e413\",\"hypothesisId\":\"H1\",\"location\":\"simulator.cpp:updateAgents\",\"message\":\"collision manager wiring\",\"data\":{\"hasPhysicsWorld\":" << (hasPhysics ? "true" : "false") << ",\"cmPassed\":" << (cmPtr != nullptr ? "true" : "false") << ",\"agentCount\":" << agents_.size() << "},\"timestamp\":" << ts << "}\n";
-            }
-        }
-    }
-    // #endregion
-
     for (auto &ag : agents_) {
         if (!ag->cust)
             continue;
@@ -400,27 +385,6 @@ void Simulator::updateAgents(float dt) {
                     while (missionCheckoutLog_.size() > MISSION_CHECKOUT_LOG_MAX)
                         missionCheckoutLog_.pop_front();
 
-                    // #region agent log
-                    {
-                        const int missionCount = static_cast<int>(mskus->size());
-                        const int basketCount  = ag->basket.getSize();
-                        std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log",
-                                         std::ios::app);
-                        if (lf) {
-                            lf << "{\"hypothesisId\":\"MC\",\"location\":\"simulator.cpp:checkout_snapshot\","
-                                  "\"message\":\"Mission checkout snapshot captured\","
-                                  "\"data\":{\"customerId\":" << ag->cust->getId()
-                               << ",\"missionCount\":" << missionCount
-                               << ",\"basketCount\":"  << basketCount
-                               << ",\"basketTotal\":"  << ag->basket.getTotal()
-                               << "},\"timestamp\":"
-                               << std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      std::chrono::system_clock::now().time_since_epoch())
-                                      .count()
-                               << "}\n";
-                        }
-                    }
-                    // #endregion
                 }
                 finalizeCheckout(*ag);
             }
@@ -463,13 +427,26 @@ void Simulator::updateAgents(float dt) {
 }
 
 void Simulator::updateWorkers(float dt) {
-    // Workers currently execute tasks in place; for the first debugging pass
-    // we do not include collision separation between workers/shelves.
-    // (CollisionManager is customer-typed in this codebase.)
     for (auto &w : workers_) {
         if (!w)
             continue;
+
         w->update(dt, store_, &queueManager_, nullptr);
+
+        const Worker::CompletedTask ev = w->popCompletedTask();
+        if (!ev.valid)
+            continue;
+
+        if (ev.type == TaskType::StockShelves) {
+            const int edgeIdx = ev.targetId;
+            if (edgeIdx >= 0 && edgeIdx < store_.numEdges()) {
+                Edge &edge = store_.mutableEdgeAt(edgeIdx);
+                for (auto &cell : edge.cells)
+                    cell.restock(3); // restore 3 units per slot per visit
+            }
+        }
+        // ProcessRegister / AssistCustomer: no direct inventory mutation needed;
+        // the queue drains naturally as customers complete checkout.
     }
 }
 

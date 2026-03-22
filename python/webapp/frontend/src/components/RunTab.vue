@@ -112,6 +112,7 @@
           accept=".csv"
           v-model="posFile"
         />
+        <IngestionProfile :profile="ingestionProfile" />
       </div>
 
       <div class="flex gap-3">
@@ -186,8 +187,9 @@
 <script setup>
 import { computed, ref } from "vue";
 import { useSimulationStore } from "../stores/simulation";
-import { createRun, listRuns, streamRun } from "../api/client";
+import { createRun, getIngestionProfile, listRuns, streamRun } from "../api/client";
 import FileUpload from "./FileUpload.vue";
+import IngestionProfile from "./IngestionProfile.vue";
 import ProgressBar from "./ProgressBar.vue";
 
 const emit = defineEmits(["run-complete", "select-run"]);
@@ -210,6 +212,7 @@ const posFile = ref(null);
 const isRunning = ref(false);
 const progressPercent = ref(0);
 const progressMessage = ref("");
+const ingestionProfile = ref(null);
 let eventSource = null;
 
 const runs = computed(() => store.runs);
@@ -279,6 +282,12 @@ function listenToStream(runId) {
       progressMessage.value = "Simulation complete";
       emit("run-complete", runId);
       refreshRuns();
+      // Fetch ingestion profile if a POS file was uploaded.
+      if (posFile.value) {
+        getIngestionProfile(runId)
+          .then((p) => { ingestionProfile.value = p; })
+          .catch(() => {});
+      }
     } else if (payload.event === "error") {
       isRunning.value = false;
       progressMessage.value = payload.data.message || "Error during simulation";

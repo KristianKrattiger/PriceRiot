@@ -43,6 +43,19 @@ export function downloadCsv(runId, kind) {
   window.open(`/api/runs/${runId}/${kind}.csv`, "_blank");
 }
 
+export async function getIngestionProfile(runId) {
+  const { data } = await api.get(`/runs/${runId}/profile`);
+  return data;
+}
+
+export async function updateRunWorkers(runId, numStockers, numCashiers) {
+  const { data } = await api.post(`/runs/${runId}/workers`, {
+    num_stockers: numStockers,
+    num_cashiers: numCashiers,
+  });
+  return data;
+}
+
 export async function listWorkers(runId) {
   const { data } = await api.get("/workers", {
     params: { run_id: runId }

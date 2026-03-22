@@ -14,6 +14,7 @@ if _script_dir not in sys.path:
     sys.path.insert(0, _script_dir)
 
 from analytics import SimulationResult, cell_heatmap_to_frame, queue_metrics_to_frame, run_simulation
+from ingestion.param_extractor import extract_params
 
 from .models import RunStatus
 from .storage import session_store
@@ -111,6 +112,26 @@ class SimulationRunner:
 
         try:
             config = run.config
+
+            # Extract simulation parameters from POS data when available, and
+            # override config defaults with data-driven values.
+            ingestion_profile: Dict[str, Any] | None = None
+            if config.pos_data and os.path.isfile(config.pos_data):
+                try:
+                    ingestion_profile = extract_params(config.pos_data)
+                    # Only override if the user left values at their defaults
+                    # (spawn_interval=5.0 and mission_probability=0.5).
+                    if config.spawn_interval == 5.0:
+                        config = config.copy(
+                            update={"spawn_interval": ingestion_profile["spawn_interval_seconds"]}
+                        )
+                    if config.mission_probability == 0.5:
+                        config = config.copy(
+                            update={"mission_probability": ingestion_profile["mission_probability"]}
+                        )
+                except Exception:
+                    pass  # Non-fatal: proceed with user-supplied values
+
             sim_result: SimulationResult = await asyncio.to_thread(
                 run_simulation,
                 store_path=config.store_yaml,
@@ -180,6 +201,7 @@ class SimulationRunner:
                 traffic_edges=traffic_edges,
                 kpis=kpis,
                 workers=list(sim_result.simulator.get_workers()) if hasattr(sim_result.simulator, "get_workers") else None,
+                ingestion_profile=ingestion_profile,
             )
 
             yield self._sse_event(

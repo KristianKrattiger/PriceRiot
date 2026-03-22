@@ -8,8 +8,10 @@
 #include "agent.h"
 #include "task.h"
 #include "../environment/environment.h"
+#include "../environment/navmesh_pathfinder.h"
 
 #include <queue>
+#include <vector>
 
 namespace priceriot {
 
@@ -38,10 +40,23 @@ class Worker : public Agent {
     [[nodiscard]] double getTaskEfficiency() const noexcept { return taskEfficiency_; }
     void setTaskEfficiency(double e) noexcept;
 
+    /** POD event emitted when a task finishes; cleared after one pop. */
+    struct CompletedTask {
+        bool     valid    = false;
+        TaskType type     = TaskType::StockShelves;
+        int      targetId = -1;
+    };
+
     // Task introspection
     void addTask(const Task &task);
     [[nodiscard]] bool hasTasks() const noexcept;
     [[nodiscard]] const Task *currentTask() const noexcept;
+
+    /**
+     * Consume and return the most recently completed task (if any).
+     * Resets the internal event to invalid after the call.
+     */
+    [[nodiscard]] CompletedTask popCompletedTask() noexcept;
 
     // Agent interface
     bool update(float dt,
@@ -61,6 +76,13 @@ class Worker : public Agent {
     bool   hasCurrentTask_{false};
     Task   currentTask_{};
     double remainingWorkSeconds_{0.0};
+
+    // Navmesh travel state
+    std::vector<NavMeshPathfinder::PathPoint> waypoints_;
+    int waypointIdx_{0};
+
+    // Pending completion event (consumed by Simulator::updateWorkers)
+    CompletedTask completedTask_{};
 
     // Internal helpers
     void maybePickNextTask();

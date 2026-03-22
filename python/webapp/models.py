@@ -78,6 +78,9 @@ class RunResult(BaseModel):
     # Aggregated KPIs for dashboard and comparison
     kpis: Dict[str, Any] = Field(default_factory=dict)
 
+    # Extracted POS ingestion profile (populated when a POS CSV was uploaded).
+    ingestion_profile: Optional[Dict[str, Any]] = None
+
 
 class ComparisonRequest(BaseModel):
     run_ids: List[str]

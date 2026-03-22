@@ -1,4 +1,7 @@
 #include "worker.h"
+#include "../environment/checkout_queue.h"
+
+#include <cmath>
 
 namespace priceriot {
 
@@ -46,7 +49,6 @@ void Worker::maybePickNextTask() {
     if (hasCurrentTask_ || taskQueue_.empty())
         return;
 
-    // For now, just pop the highest priority/oldest task and start executing in place.
     currentTask_ = taskQueue_.top();
     taskQueue_.pop();
     hasCurrentTask_ = true;
@@ -54,38 +56,50 @@ void Worker::maybePickNextTask() {
 }
 
 void Worker::startExecutingCurrentTask() {
-    state_ = State::ExecutingTask;
+    // Transition to movement first; pathfinding happens on the first MovingToTask tick.
+    state_       = State::MovingToTask;
+    waypoints_.clear();
+    waypointIdx_ = 0;
 
-    // Simple per-task base durations in seconds, scaled by efficiency.
+    // Pre-compute work duration now so it's ready when we arrive.
     double baseDuration = 5.0;
     switch (currentTask_.type) {
         case TaskType::StockShelves:    baseDuration = 8.0; break;
         case TaskType::ProcessRegister: baseDuration = 6.0; break;
         case TaskType::AssistCustomer:  baseDuration = 4.0; break;
     }
-
     const double eff = std::max(taskEfficiency_, 0.1);
     remainingWorkSeconds_ = baseDuration / eff;
 }
 
 void Worker::tickExecuting(double dt) {
-    if (!hasCurrentTask_)
-        return;
-    if (state_ != State::ExecutingTask)
+    if (!hasCurrentTask_ || state_ != State::ExecutingTask)
         return;
 
     remainingWorkSeconds_ -= dt;
     if (remainingWorkSeconds_ <= 0.0) {
-        // Task complete; in a later wiring step, TaskManager will be notified.
-        hasCurrentTask_ = false;
-        state_ = State::Idle;
+        // Emit a completion event for Simulator::updateWorkers to apply world effects.
+        completedTask_.valid    = true;
+        completedTask_.type     = currentTask_.type;
+        completedTask_.targetId = currentTask_.targetId;
+
+        happiness_ = std::min(1.0, happiness_ + 0.05);
+
+        hasCurrentTask_       = false;
+        state_                = State::Idle;
         remainingWorkSeconds_ = 0.0;
     }
 }
 
+Worker::CompletedTask Worker::popCompletedTask() noexcept {
+    CompletedTask out  = completedTask_;
+    completedTask_.valid = false;
+    return out;
+}
+
 bool Worker::update(float dt,
-                    const StoreGraph & /*store*/,
-                    CheckoutQueueManager * /*queueManager*/,
+                    const StoreGraph &store,
+                    CheckoutQueueManager *queueManager,
                     CollisionManager * /*collisionManager*/) {
     switch (state_) {
         case State::Idle:
@@ -93,19 +107,81 @@ bool Worker::update(float dt,
                 maybePickNextTask();
             break;
 
-        case State::MovingToTask:
-            // Placeholder: once wired to spatial targets, move toward them here
-            // using StoreGraph/navmesh utilities, then transition to ExecutingTask.
-            // For the first iteration, we skip movement and execute in place.
-            state_ = State::ExecutingTask;
+        case State::MovingToTask: {
+            // On the first tick of a new task: resolve target world position and compute path.
+            if (waypoints_.empty()) {
+                double tgtX = posX_, tgtZ = posZ_;
+
+                if (hasCurrentTask_) {
+                    if (currentTask_.type == TaskType::StockShelves) {
+                        const int edgeIdx = currentTask_.targetId;
+                        if (edgeIdx >= 0 && edgeIdx < store.numEdges()) {
+                            const int midCell = std::max(0, store.edgeAt(edgeIdx).getCellCount() / 2);
+                            auto [cx, cz]     = store.getCellCenter(edgeIdx, midCell);
+                            tgtX = cx;
+                            tgtZ = cz;
+                        }
+                    } else if (currentTask_.type == TaskType::ProcessRegister && queueManager) {
+                        const int lane = currentTask_.targetId;
+                        if (lane >= 0 && static_cast<size_t>(lane) < queueManager->getLaneCount()) {
+                            const auto &wp = queueManager->getLane(static_cast<size_t>(lane)).waypoints;
+                            if (!wp.empty()) {
+                                tgtX = wp[0].x;
+                                tgtZ = wp[0].z;
+                            }
+                        }
+                    } else {
+                        // AssistCustomer or unknown: execute in place immediately.
+                        state_ = State::ExecutingTask;
+                        break;
+                    }
+                }
+
+                if (store.hasNavMesh()) {
+                    waypoints_ = NavMeshPathfinder::findPath(store.getNavMesh(),
+                                                             posX_, posZ_, tgtX, tgtZ);
+                }
+                waypointIdx_ = 0;
+
+                if (waypoints_.empty()) {
+                    // No navmesh or unreachable: teleport to target and begin work.
+                    posX_ = tgtX;
+                    posZ_ = tgtZ;
+                    state_ = State::ExecutingTask;
+                    break;
+                }
+            }
+
+            // Advance along the computed path.
+            if (waypointIdx_ < static_cast<int>(waypoints_.size())) {
+                const auto &wp  = waypoints_[static_cast<size_t>(waypointIdx_)];
+                const double dx = wp.x - posX_;
+                const double dz = wp.z - posZ_;
+                const double dist = std::sqrt(dx * dx + dz * dz);
+                const double step = effectiveSpeed() * static_cast<double>(dt);
+
+                if (dist <= step) {
+                    posX_ = wp.x;
+                    posZ_ = wp.z;
+                    ++waypointIdx_;
+                } else {
+                    posX_ += dx / dist * step;
+                    posZ_ += dz / dist * step;
+                }
+            } else {
+                // Reached the end of the path.
+                waypoints_.clear();
+                waypointIdx_ = 0;
+                state_       = State::ExecutingTask;
+            }
             break;
+        }
 
         case State::ExecutingTask:
             tickExecuting(dt);
             break;
     }
 
-    // Workers currently do not despawn; always return true.
     return true;
 }
 
