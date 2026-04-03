@@ -1,4 +1,14 @@
 products_file: data/raw/products.csv
+
+days_of_operation: [Mon, Tue, Wed, Thu, Fri, Sat]
+
+hours_of_operation:
+  Mon: { open: 9, close: 17 }
+  Tue: { open: 9, close: 17 }
+  Wed: { open: 9, close: 17 }
+  Thu: { open: 9, close: 17 }
+  Fri: { open: 9, close: 18 }
+  Sat: { open: 9, close: 18 }
 nodes:
   - id: 1
     type: Entrance

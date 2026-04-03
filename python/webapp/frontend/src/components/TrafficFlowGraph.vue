@@ -1,33 +1,33 @@
 <template>
   <div class="space-y-3" v-if="hasData">
-    <h3 class="text-sm font-semibold text-slate-200">
+    <h3 class="text-[11px] uppercase tracking-label text-ink-ghost font-medium">
       Traffic by edge
     </h3>
-    <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 space-y-2">
+    <div class="border border-rim bg-surface-deep p-4 space-y-2">
       <div
         v-for="edge in sortedEdges"
         :key="edge.edge_index"
-        class="flex items-center gap-2 text-xs text-slate-200"
+        class="flex items-center gap-3 text-[11px]"
       >
-        <span class="w-20 text-slate-300">
+        <span class="w-16 font-mono text-ink-ghost shrink-0">
           Edge {{ edge.edge_index }}
         </span>
-        <div class="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+        <div class="flex-1 h-px bg-rim overflow-hidden relative">
           <div
-            class="h-full rounded-full bg-sky-400"
+            class="absolute inset-y-0 left-0 h-full bg-deep-teal"
             :style="{ width: barWidth(edge) }"
           />
         </div>
-        <span class="w-12 text-right text-slate-400">
+        <span class="w-10 text-right font-mono text-ink-dim shrink-0">
           {{ edge.visits }}
         </span>
       </div>
     </div>
-    <p class="text-xs text-slate-400">
-      Edges sorted by total visit count; higher bars indicate more traffic.
+    <p class="text-[11px] text-ink-ghost">
+      Sorted by visit count. Longer bar = more traffic.
     </p>
   </div>
-  <div v-else class="text-xs text-slate-400">
+  <div v-else class="text-[11px] text-ink-ghost">
     No traffic data available for this run.
   </div>
 </template>
@@ -35,12 +35,7 @@
 <script setup>
 import { computed } from "vue";
 
-const props = defineProps({
-  trafficEdges: {
-    type: Array,
-    required: true
-  }
-});
+const props = defineProps({ trafficEdges: { type: Array, required: true } });
 
 const hasData = computed(
   () => Array.isArray(props.trafficEdges) && props.trafficEdges.length > 0
@@ -48,12 +43,8 @@ const hasData = computed(
 
 const sortedEdges = computed(() => {
   if (!hasData.value) return [];
-
   return [...props.trafficEdges]
-    .map((e) => ({
-      edge_index: e.edge_index,
-      visits: Number(e.visits ?? 0)
-    }))
+    .map((e) => ({ edge_index: e.edge_index, visits: Number(e.visits ?? 0) }))
     .filter((e) => Number.isFinite(e.edge_index) && Number.isFinite(e.visits))
     .sort((a, b) => b.visits - a.visits);
 });
@@ -65,8 +56,6 @@ const maxVisits = computed(() => {
 
 function barWidth(edge) {
   if (maxVisits.value <= 0) return "0%";
-  const ratio = edge.visits / maxVisits.value;
-  return `${Math.max(3, ratio * 100)}%`;
+  return `${Math.max(2, (edge.visits / maxVisits.value) * 100)}%`;
 }
 </script>
-

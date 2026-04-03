@@ -5,7 +5,8 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Dict, Any
+from itertools import combinations
+from typing import AsyncGenerator, Dict, Any, List
 
 import pandas as pd
 
@@ -24,7 +25,60 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _compute_kpis(result: SimulationResult) -> Dict[str, Any]:
+def _load_sku_names(product_csv: str | None) -> Dict[str, str]:
+    """Return a sku→name mapping from a product CSV, or an empty dict."""
+    paths_to_try: list[str] = []
+    if product_csv and os.path.isfile(product_csv):
+        paths_to_try.append(product_csv)
+    # Fallback: repo-default products CSV
+    default_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "data", "raw", "products.csv",
+    )
+    if os.path.isfile(default_path):
+        paths_to_try.append(default_path)
+    for path in paths_to_try:
+        try:
+            df = pd.read_csv(path, dtype=str)
+            if "sku" in df.columns and "name" in df.columns:
+                return dict(zip(df["sku"].str.strip(), df["name"].str.strip()))
+        except Exception:
+            pass
+    return {}
+
+
+def _compute_sku_breakdown(
+    result: SimulationResult, sku_names: Dict[str, str] | None = None
+) -> List[Dict[str, Any]]:
+    """Return a list of per-SKU {sku, name, quantity, revenue} dicts, sorted by revenue desc."""
+    tx = result.transactions
+    if tx.empty or "item_id" not in tx.columns:
+        return []
+    lookup = sku_names or {}
+    rows: List[Dict[str, Any]] = []
+
+    qty_series = pd.to_numeric(tx.get("quantity", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
+    rev_series = pd.to_numeric(tx.get("item_total", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
+    tx2 = tx.assign(_qty=qty_series, _rev=rev_series)
+
+    grouped_qty = tx2.groupby("item_id")["_qty"].sum() if "quantity" in tx.columns else pd.Series(dtype=float)
+    grouped_rev = tx2.groupby("item_id")["_rev"].sum() if "item_total" in tx.columns else pd.Series(dtype=float)
+
+    all_skus = set(grouped_qty.index.tolist()) | set(grouped_rev.index.tolist())
+    for sku in all_skus:
+        sku_str = str(sku)
+        rows.append({
+            "sku": sku_str,
+            "name": lookup.get(sku_str, sku_str),
+            "quantity": float(grouped_qty.get(sku, 0.0)),
+            "revenue": round(float(grouped_rev.get(sku, 0.0)), 2),
+        })
+
+    rows.sort(key=lambda r: r["revenue"], reverse=True)
+    return rows
+
+
+def _compute_kpis(result: SimulationResult, sku_names: Dict[str, str] | None = None) -> Dict[str, Any]:
     tx = result.transactions
     cust = result.customers
 
@@ -74,15 +128,59 @@ def _compute_kpis(result: SimulationResult) -> Dict[str, Any]:
         if len(per_tx_items) > 0:
             avg_items_per_basket = float(per_tx_items.mean())
 
+    total_revenue = 0.0
+    if "item_total" in tx.columns and not tx.empty:
+        total_revenue = round(float(pd.to_numeric(tx["item_total"], errors="coerce").fillna(0.0).sum()), 2)
+
     kpis: Dict[str, Any] = {
         "total_customers": int(total_customers),
         "total_transactions": int(total_transactions),
         "avg_basket_value": avg_basket_value,
         "avg_items_per_basket": avg_items_per_basket,
+        "total_revenue": total_revenue,
     }
 
-    if "dwell_time" in cust:
+    if "dwell_time" in cust.columns:
         kpis["avg_dwell_time"] = float(cust["dwell_time"].mean())
+
+    # Per-SKU breakdowns
+    if "item_id" in tx.columns and not tx.empty:
+        id_col = tx["item_id"].dropna()
+        if not id_col.empty:
+            lookup = sku_names or {}
+            if "quantity" in tx.columns:
+                qty = pd.to_numeric(tx["quantity"], errors="coerce").fillna(0.0)
+                sku_qty = tx.assign(_qty=qty).groupby("item_id")["_qty"].sum()
+                if not sku_qty.empty:
+                    sku_id = str(sku_qty.idxmax())
+                    kpis["most_bought_product"] = lookup.get(sku_id, sku_id)
+
+            if "item_total" in tx.columns:
+                rev = pd.to_numeric(tx["item_total"], errors="coerce").fillna(0.0)
+                sku_rev = tx.assign(_rev=rev).groupby("item_id")["_rev"].sum()
+                if not sku_rev.empty:
+                    sku_id = str(sku_rev.idxmax())
+                    kpis["highest_revenue_product"] = lookup.get(sku_id, sku_id)
+
+    # Top co-purchased SKU pairs/triples (within the same transaction)
+    if (
+        "item_id" in tx.columns
+        and "transaction_id" in tx.columns
+        and not tx.empty
+    ):
+        pair_counts: Dict[tuple, int] = {}
+        for _tid, group in tx.groupby("transaction_id")["item_id"]:
+            skus = [s for s in group.dropna().tolist() if s]
+            for r in (2, 3):
+                for combo in combinations(sorted(set(skus)), r):
+                    pair_counts[combo] = pair_counts.get(combo, 0) + 1
+
+        top_pairs: List[Dict[str, Any]] = sorted(
+            [{"items": list(k), "count": v} for k, v in pair_counts.items()],
+            key=lambda x: x["count"],
+            reverse=True,
+        )[:5]
+        kpis["top_sku_pairs"] = top_pairs
 
     return kpis
 
@@ -91,7 +189,7 @@ class SimulationRunner:
     """High-level orchestrator that runs simulations and streams progress over SSE."""
 
     async def run_and_stream(self, run_id: str) -> AsyncGenerator[str, None]:
-        run = session_store.get_run(run_id)
+        run = await session_store.async_get_run(run_id)
         if run is None:
             yield self._sse_event(
                 "error",
@@ -99,7 +197,12 @@ class SimulationRunner:
             )
             return
 
-        session_store.update_run(
+        # Guard against EventSource auto-reconnects re-running a finished run.
+        if run.status in (RunStatus.COMPLETED, RunStatus.FAILED):
+            yield self._sse_event("complete", {"run_id": run_id})
+            return
+
+        await session_store.async_update_run(
             run_id,
             status=RunStatus.RUNNING,
             started_at=_now_iso(),
@@ -113,21 +216,15 @@ class SimulationRunner:
         try:
             config = run.config
 
-            # Extract simulation parameters from POS data when available, and
-            # override config defaults with data-driven values.
+            # Extract spawn interval from POS data when available.
+            # Only override if the user left spawn_interval at its default (5.0).
             ingestion_profile: Dict[str, Any] | None = None
             if config.pos_data and os.path.isfile(config.pos_data):
                 try:
                     ingestion_profile = extract_params(config.pos_data)
-                    # Only override if the user left values at their defaults
-                    # (spawn_interval=5.0 and mission_probability=0.5).
                     if config.spawn_interval == 5.0:
                         config = config.copy(
                             update={"spawn_interval": ingestion_profile["spawn_interval_seconds"]}
-                        )
-                    if config.mission_probability == 0.5:
-                        config = config.copy(
-                            update={"mission_probability": ingestion_profile["mission_probability"]}
                         )
                 except Exception:
                     pass  # Non-fatal: proceed with user-supplied values
@@ -166,12 +263,12 @@ class SimulationRunner:
             # Queue metrics are optional depending on the simulator version.
             queue_data = []
             queue_kpis: Dict[str, Any] = {}
-            if hasattr(sim_result.simulator, "get_queue_times") and hasattr(
-                sim_result.simulator, "get_queue_lengths"
+            if hasattr(sim_result.simulator, "get_queue_sample_times") and hasattr(
+                sim_result.simulator, "get_queue_lengths_history"
             ):
                 queue_df = queue_metrics_to_frame(
-                    sim_result.simulator.get_queue_times(),
-                    sim_result.simulator.get_queue_lengths(),
+                    sim_result.simulator.get_queue_sample_times(),
+                    sim_result.simulator.get_queue_lengths_history(),
                 )
                 queue_data = queue_df.to_dict(orient="records")
                 if not queue_df.empty:
@@ -184,13 +281,39 @@ class SimulationRunner:
                         "p95_queue_length": p95_len,
                     }
 
-            kpis = _compute_kpis(sim_result)
+            sku_names = _load_sku_names(config.product_csv)
+            kpis = _compute_kpis(sim_result, sku_names)
+            sku_breakdown = _compute_sku_breakdown(sim_result, sku_names)
             if queue_kpis:
                 kpis.update(queue_kpis)
             if traffic_kpis:
                 kpis.update(traffic_kpis)
 
-            session_store.update_run(
+            worker_timeseries: List[Dict[str, Any]] = []
+            if hasattr(sim_result.simulator, "get_worker_mood_samples"):
+                worker_timeseries = list(sim_result.simulator.get_worker_mood_samples())
+
+            workers_list: List[Dict[str, Any]] | None = None
+            if hasattr(sim_result.simulator, "get_workers"):
+                workers_list = []
+                for w in sim_result.simulator.get_workers():
+                    entry = dict(w)
+                    if entry.get("current_task") is not None:
+                        task = dict(entry["current_task"])
+                        task["type"] = str(task["type"]).split(".")[-1]
+                        entry["current_task"] = task
+                    workers_list.append(entry)
+
+            # Aggregate worker summary KPIs from the final snapshot.
+            if workers_list:
+                kpis["total_workers"] = len(workers_list)
+                kpis["stocker_count"] = sum(1 for w in workers_list if w.get("can_stock") and not w.get("can_serve"))
+                kpis["cashier_count"] = sum(1 for w in workers_list if w.get("can_serve") and not w.get("can_stock"))
+                efficiency_vals = [w["task_efficiency"] for w in workers_list if "task_efficiency" in w]
+                if efficiency_vals:
+                    kpis["avg_efficiency"] = round(sum(efficiency_vals) / len(efficiency_vals), 4)
+
+            await session_store.async_update_run(
                 run_id,
                 status=RunStatus.COMPLETED,
                 completed_at=_now_iso(),
@@ -200,8 +323,10 @@ class SimulationRunner:
                 queue_data=queue_data,
                 traffic_edges=traffic_edges,
                 kpis=kpis,
-                workers=list(sim_result.simulator.get_workers()) if hasattr(sim_result.simulator, "get_workers") else None,
+                workers=workers_list,
                 ingestion_profile=ingestion_profile,
+                sku_breakdown=sku_breakdown,
+                worker_timeseries=worker_timeseries if worker_timeseries else None,
             )
 
             yield self._sse_event(
@@ -213,7 +338,7 @@ class SimulationRunner:
                 {"run_id": run_id},
             )
         except Exception as exc:
-            session_store.update_run(
+            await session_store.async_update_run(
                 run_id,
                 status=RunStatus.FAILED,
                 failed_at=_now_iso(),

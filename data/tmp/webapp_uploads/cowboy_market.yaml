@@ -1,25 +1,38 @@
-products_file: data/raw/products.csv
+name: Cowboy Market
+products_file: data/raw/cowboy_products.csv
 
-# Store layout (X = depth left→right, Z = width top→bottom):
+days_of_operation: [Mon, Tue, Wed, Thu, Fri, Sat]
+
+hours_of_operation:
+  Mon: { open: 9, close: 19 }
+  Tue: { open: 9, close: 19 }
+  Wed: { open: 9, close: 19 }
+  Thu: { open: 9, close: 19 }
+  Fri: { open: 9, close: 20 }
+  Sat: { open: 9, close: 20 }
+
+# Store layout — single entrance/exit co-located at (x=36, z=0), beside the register.
 #
-#  [Entrance(1)] --e1--> [F-ctr(3)]
-#                            |
-#                       front cross-corridor (e2, e3)
-#                       /    |    \
-#              [F-left(2)] [F-ctr(3)] [F-right(4)]
-#                  |           |           |
-#                 e4          e5          e6   <- straight aisles (same Z in/out)
-#                  |           |           |
-#              [B-left(5)] [B-ctr(6)] [B-right(8)]
-#                       \    |    /
-#                        back cross-corridor (e7, e8)
-#                            |
-#                       [Register(10)] --e10--> [Exit(7)]
+# Customer flow:
+#   Entrance(1, x=36,z=0) -e11-> Foyer(11, x=34,z=-3)
+#       -e12-> Jct-Bleft(5, x=20,z=-4)
+#       <-> back cross-corridor (e7, e8) <-> Jct-Bctr(6), Jct-Bright(8)
+#       <-> three shelf aisles (e4, e5, e6)
+#       <-> front cross-corridor (e2, e3) <-> Jct-Fleft(2), Jct-Fctr(3), Jct-Fright(4)
+#       -> Jct-Bctr(6) -e9-> Register(10, x=28,z=0) -e10-> Exit(7, x=36,z=0)
+#
+# Entrance and Exit share world position (x=36, z=0) — single door store.
+#
+# Aisle assignment:
+#   Edge 4 (z=-4): Cowboy Food        (SKUs  1-10)
+#   Edge 5 (z= 0): Ranch Supplies     (SKUs 11-18)
+#   Edge 6 (z=+4): Apparel/Gear/Leather (SKUs 19-30)
 
 nodes:
+  # ── Entrance/Exit — co-located at front door ──────────────────────────
   - id: 1
     type: Entrance
-    x: 0.0
+    x: 36.0
     z: 0.0
     length: 4.0
     width: 3.0
@@ -34,29 +47,11 @@ nodes:
     entry_rate: 1.0
     exit_rate: 0.0
 
-  # Front cross-corridor nodes — same X, spread on Z
-  - id: 2
-    type: Junction
-    x: 8.0
-    z: -4.0
-    length: 3.0
-    width: 3.0
-    shelf_left: 0.0
-    shelf_right: 0.0
-    blocked: 0.0
-    personal_space: 1.0
-    jam_density: 3.5
-    dwell_s: 0.0
-    service_rate: 0.0
-    agents: 0
-    entry_rate: 0.0
-    exit_rate: 0.0
-
-  - id: 3
-    type: Junction
-    x: 8.0
+  - id: 7
+    type: Exit
+    x: 36.0
     z: 0.0
-    length: 3.0
+    length: 4.0
     width: 3.0
     shelf_left: 0.0
     shelf_right: 0.0
@@ -67,12 +62,13 @@ nodes:
     service_rate: 0.0
     agents: 0
     entry_rate: 0.0
-    exit_rate: 0.0
+    exit_rate: 1.0
 
-  - id: 4
+  # ── Foyer bypass junction (entrance side, offset from register) ────────
+  - id: 11
     type: Junction
-    x: 8.0
-    z: 4.0
+    x: 34.0
+    z: -3.0
     length: 3.0
     width: 3.0
     shelf_left: 0.0
@@ -86,7 +82,25 @@ nodes:
     entry_rate: 0.0
     exit_rate: 0.0
 
-  # Back cross-corridor nodes — same X, spread on Z
+  # ── Register ──────────────────────────────────────────────────────────
+  - id: 10
+    type: Register
+    x: 28.0
+    z: 0.0
+    length: 6.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 5.0
+    service_rate: 0.5
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  # ── Back cross-corridor junctions (x=20) ──────────────────────────────
   - id: 5
     type: Junction
     x: 20.0
@@ -138,28 +152,30 @@ nodes:
     entry_rate: 0.0
     exit_rate: 0.0
 
-  - id: 10
-    type: Register
-    x: 28.0
+  # ── Stockroom — rear of store, behind aisles (x=2, z=0) ─────────────
+  - id: 9
+    type: Stockroom
+    x: 2.0
     z: 0.0
-    length: 6.0
+    length: 4.0
     width: 4.0
     shelf_left: 0.0
     shelf_right: 0.0
     blocked: 0.0
     personal_space: 1.0
     jam_density: 3.5
-    dwell_s: 5.0
-    service_rate: 0.5
+    dwell_s: 0.0
+    service_rate: 0.0
     agents: 0
     entry_rate: 0.0
     exit_rate: 0.0
 
-  - id: 7
-    type: Exit
-    x: 36.0
-    z: 0.0
-    length: 4.0
+  # ── Front cross-corridor junctions (x=8, far end of aisles) ───────────
+  - id: 2
+    type: Junction
+    x: 8.0
+    z: -4.0
+    length: 3.0
     width: 3.0
     shelf_left: 0.0
     shelf_right: 0.0
@@ -170,14 +186,62 @@ nodes:
     service_rate: 0.0
     agents: 0
     entry_rate: 0.0
-    exit_rate: 1.0
+    exit_rate: 0.0
+
+  - id: 3
+    type: Junction
+    x: 8.0
+    z: 0.0
+    length: 3.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
+  - id: 4
+    type: Junction
+    x: 8.0
+    z: 4.0
+    length: 3.0
+    width: 3.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
 
 edges:
-  # Entrance → front-center junction (straight along X)
-  - id: 1
-    from: 1
+  # ── Stockroom → Jct-Fctr connector (edge 13, x=2 ↔ x=8) ──────────────
+  - id: 13
+    from: 9
     to: 3
-    length: 8.0
+    length: 6.0
+    width: 3.0
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+  # ── Entrance → Foyer junction (short connector) ────────────────────────
+  - id: 11
+    from: 1
+    to: 11
+    length: 3.2
     width: 3.5
     free_speed: 1.2
     jam_density: 3.5
@@ -187,7 +251,21 @@ edges:
     shelf_left: 0.0
     shelf_right: 0.0
 
-  # Front cross-corridor (along Z — connects the 3 aisle entrances)
+  # ── Foyer → Jct-Bleft (entry corridor bypassing register) ─────────────
+  - id: 12
+    from: 11
+    to: 5
+    length: 18.0
+    width: 3.5
+    free_speed: 1.2
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
+  # ── Front cross-corridor (along Z, x=8) ───────────────────────────────
   - id: 2
     from: 2
     to: 3
@@ -214,12 +292,12 @@ edges:
     shelf_left: 0.0
     shelf_right: 0.0
 
-  # Three parallel aisles (each runs along X — from/to nodes share same Z)
+  # ── Three parallel shelf aisles (x=8 ↔ x=20, 12 m each) ──────────────
   - id: 4
     from: 2
     to: 5
     length: 12.0
-    width: 3
+    width: 3.0
     free_speed: 1.0
     jam_density: 3.5
     blocked: 0.0
@@ -232,7 +310,7 @@ edges:
     from: 3
     to: 6
     length: 12.0
-    width: 3
+    width: 3.0
     free_speed: 1.0
     jam_density: 3.5
     blocked: 0.0
@@ -245,7 +323,7 @@ edges:
     from: 4
     to: 8
     length: 12.0
-    width: 3
+    width: 3.0
     free_speed: 1.0
     jam_density: 3.5
     blocked: 0.0
@@ -254,7 +332,7 @@ edges:
     shelf_left: 0.7
     shelf_right: 0.7
 
-  # Back cross-corridor (along Z — connects the 3 aisle exits)
+  # ── Back cross-corridor (along Z, x=20) ───────────────────────────────
   - id: 7
     from: 5
     to: 6
@@ -281,7 +359,7 @@ edges:
     shelf_left: 0.0
     shelf_right: 0.0
 
-  # Back-center → register (straight along X)
+  # ── Back-center → Register → Exit ─────────────────────────────────────
   - id: 9
     from: 6
     to: 10
@@ -295,7 +373,6 @@ edges:
     shelf_left: 0.0
     shelf_right: 0.0
 
-  # Register → exit (straight along X)
   - id: 10
     from: 10
     to: 7
@@ -311,82 +388,204 @@ edges:
 
 planogram:
   edges:
-    # Aisle 1 (z = -4): Cowboy foods
+    # ── Aisle 1 (edge 4, z=-4): Cowboy Food ──────────────────────────────
+    # SKUs 1-10: Chuckwagon Beans, Campfire Chili, Smoky BBQ Sauce,
+    #            Trail Beef Jerky, Cornbread Mix, Campfire Coffee,
+    #            Prairie Honey, Hardtack Biscuits, Dried Apple Slices,
+    #            Smoked Sausage Links
     "4":
       left_side:
-        bay_count: 1
+        bay_count: 3
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 11   # Chuckwagon Beans
-            on_shelf_qty: 25
+          - { bay: 0, face: 0, slot: 0, sku: 1,  on_shelf_qty: 20 }
+          - { bay: 0, face: 0, slot: 1, sku: 2,  on_shelf_qty: 20 }
+          - { bay: 0, face: 0, slot: 2, sku: 3,  on_shelf_qty: 20 }
+          - { bay: 0, face: 1, slot: 0, sku: 4,  on_shelf_qty: 18 }
+          - { bay: 0, face: 1, slot: 1, sku: 5,  on_shelf_qty: 18 }
+          - { bay: 0, face: 1, slot: 2, sku: 6,  on_shelf_qty: 18 }
+          - { bay: 0, face: 2, slot: 0, sku: 7,  on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 1, sku: 8,  on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 2, sku: 9,  on_shelf_qty: 15 }
+          - { bay: 1, face: 0, slot: 0, sku: 10, on_shelf_qty: 20 }
+          - { bay: 1, face: 0, slot: 1, sku: 1,  on_shelf_qty: 20 }
+          - { bay: 1, face: 0, slot: 2, sku: 2,  on_shelf_qty: 20 }
+          - { bay: 1, face: 1, slot: 0, sku: 3,  on_shelf_qty: 18 }
+          - { bay: 1, face: 1, slot: 1, sku: 4,  on_shelf_qty: 18 }
+          - { bay: 1, face: 1, slot: 2, sku: 5,  on_shelf_qty: 18 }
+          - { bay: 1, face: 2, slot: 0, sku: 6,  on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 1, sku: 7,  on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 2, sku: 8,  on_shelf_qty: 15 }
+          - { bay: 2, face: 0, slot: 0, sku: 9,  on_shelf_qty: 20 }
+          - { bay: 2, face: 0, slot: 1, sku: 10, on_shelf_qty: 20 }
+          - { bay: 2, face: 0, slot: 2, sku: 1,  on_shelf_qty: 20 }
+          - { bay: 2, face: 1, slot: 0, sku: 2,  on_shelf_qty: 18 }
+          - { bay: 2, face: 1, slot: 1, sku: 3,  on_shelf_qty: 18 }
+          - { bay: 2, face: 1, slot: 2, sku: 4,  on_shelf_qty: 18 }
+          - { bay: 2, face: 2, slot: 0, sku: 5,  on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 1, sku: 6,  on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 2, sku: 7,  on_shelf_qty: 15 }
       right_side:
-        bay_count: 1
+        bay_count: 3
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 12   # Campfire Chili
-            on_shelf_qty: 25
+          - { bay: 0, face: 0, slot: 0, sku: 8,  on_shelf_qty: 20 }
+          - { bay: 0, face: 0, slot: 1, sku: 9,  on_shelf_qty: 20 }
+          - { bay: 0, face: 0, slot: 2, sku: 10, on_shelf_qty: 20 }
+          - { bay: 0, face: 1, slot: 0, sku: 1,  on_shelf_qty: 18 }
+          - { bay: 0, face: 1, slot: 1, sku: 2,  on_shelf_qty: 18 }
+          - { bay: 0, face: 1, slot: 2, sku: 3,  on_shelf_qty: 18 }
+          - { bay: 0, face: 2, slot: 0, sku: 4,  on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 1, sku: 5,  on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 2, sku: 6,  on_shelf_qty: 15 }
+          - { bay: 1, face: 0, slot: 0, sku: 7,  on_shelf_qty: 20 }
+          - { bay: 1, face: 0, slot: 1, sku: 8,  on_shelf_qty: 20 }
+          - { bay: 1, face: 0, slot: 2, sku: 9,  on_shelf_qty: 20 }
+          - { bay: 1, face: 1, slot: 0, sku: 10, on_shelf_qty: 18 }
+          - { bay: 1, face: 1, slot: 1, sku: 1,  on_shelf_qty: 18 }
+          - { bay: 1, face: 1, slot: 2, sku: 2,  on_shelf_qty: 18 }
+          - { bay: 1, face: 2, slot: 0, sku: 3,  on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 1, sku: 4,  on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 2, sku: 5,  on_shelf_qty: 15 }
+          - { bay: 2, face: 0, slot: 0, sku: 6,  on_shelf_qty: 20 }
+          - { bay: 2, face: 0, slot: 1, sku: 7,  on_shelf_qty: 20 }
+          - { bay: 2, face: 0, slot: 2, sku: 8,  on_shelf_qty: 20 }
+          - { bay: 2, face: 1, slot: 0, sku: 9,  on_shelf_qty: 18 }
+          - { bay: 2, face: 1, slot: 1, sku: 10, on_shelf_qty: 18 }
+          - { bay: 2, face: 1, slot: 2, sku: 1,  on_shelf_qty: 18 }
+          - { bay: 2, face: 2, slot: 0, sku: 2,  on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 1, sku: 3,  on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 2, sku: 4,  on_shelf_qty: 15 }
 
-    # Aisle 2 (z = 0): Cowboy foods + ranch supplies
+    # ── Aisle 2 (edge 5, z=0): Ranch Supplies ────────────────────────────
+    # SKUs 11-18: Lasso Rope, Horse Feed Sack, Saddle Oil, Work Gloves,
+    #             Fence Wire, Hay Bale Twine, Stock Tank Float, Branding Iron
     "5":
       left_side:
-        bay_count: 1
+        bay_count: 3
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 13   # Smoky BBQ Sauce
-            on_shelf_qty: 20
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 14   # Trail Beef Jerky
-            on_shelf_qty: 20
+          - { bay: 0, face: 0, slot: 0, sku: 11, on_shelf_qty: 15 }
+          - { bay: 0, face: 0, slot: 1, sku: 12, on_shelf_qty: 15 }
+          - { bay: 0, face: 0, slot: 2, sku: 13, on_shelf_qty: 15 }
+          - { bay: 0, face: 1, slot: 0, sku: 14, on_shelf_qty: 20 }
+          - { bay: 0, face: 1, slot: 1, sku: 15, on_shelf_qty: 12 }
+          - { bay: 0, face: 1, slot: 2, sku: 16, on_shelf_qty: 18 }
+          - { bay: 0, face: 2, slot: 0, sku: 17, on_shelf_qty: 10 }
+          - { bay: 0, face: 2, slot: 1, sku: 18, on_shelf_qty:  8 }
+          - { bay: 0, face: 2, slot: 2, sku: 11, on_shelf_qty: 15 }
+          - { bay: 1, face: 0, slot: 0, sku: 12, on_shelf_qty: 15 }
+          - { bay: 1, face: 0, slot: 1, sku: 13, on_shelf_qty: 15 }
+          - { bay: 1, face: 0, slot: 2, sku: 14, on_shelf_qty: 20 }
+          - { bay: 1, face: 1, slot: 0, sku: 15, on_shelf_qty: 12 }
+          - { bay: 1, face: 1, slot: 1, sku: 16, on_shelf_qty: 18 }
+          - { bay: 1, face: 1, slot: 2, sku: 17, on_shelf_qty: 10 }
+          - { bay: 1, face: 2, slot: 0, sku: 18, on_shelf_qty:  8 }
+          - { bay: 1, face: 2, slot: 1, sku: 11, on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 2, sku: 12, on_shelf_qty: 15 }
+          - { bay: 2, face: 0, slot: 0, sku: 13, on_shelf_qty: 15 }
+          - { bay: 2, face: 0, slot: 1, sku: 14, on_shelf_qty: 20 }
+          - { bay: 2, face: 0, slot: 2, sku: 15, on_shelf_qty: 12 }
+          - { bay: 2, face: 1, slot: 0, sku: 16, on_shelf_qty: 18 }
+          - { bay: 2, face: 1, slot: 1, sku: 17, on_shelf_qty: 10 }
+          - { bay: 2, face: 1, slot: 2, sku: 18, on_shelf_qty:  8 }
+          - { bay: 2, face: 2, slot: 0, sku: 11, on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 1, sku: 12, on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 2, sku: 13, on_shelf_qty: 15 }
       right_side:
-        bay_count: 1
+        bay_count: 3
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 15   # Cornbread Mix
-            on_shelf_qty: 20
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 16   # Campfire Coffee
-            on_shelf_qty: 15
+          - { bay: 0, face: 0, slot: 0, sku: 14, on_shelf_qty: 20 }
+          - { bay: 0, face: 0, slot: 1, sku: 15, on_shelf_qty: 12 }
+          - { bay: 0, face: 0, slot: 2, sku: 16, on_shelf_qty: 18 }
+          - { bay: 0, face: 1, slot: 0, sku: 17, on_shelf_qty: 10 }
+          - { bay: 0, face: 1, slot: 1, sku: 18, on_shelf_qty:  8 }
+          - { bay: 0, face: 1, slot: 2, sku: 11, on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 0, sku: 12, on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 1, sku: 13, on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 2, sku: 14, on_shelf_qty: 20 }
+          - { bay: 1, face: 0, slot: 0, sku: 15, on_shelf_qty: 12 }
+          - { bay: 1, face: 0, slot: 1, sku: 16, on_shelf_qty: 18 }
+          - { bay: 1, face: 0, slot: 2, sku: 17, on_shelf_qty: 10 }
+          - { bay: 1, face: 1, slot: 0, sku: 18, on_shelf_qty:  8 }
+          - { bay: 1, face: 1, slot: 1, sku: 11, on_shelf_qty: 15 }
+          - { bay: 1, face: 1, slot: 2, sku: 12, on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 0, sku: 13, on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 1, sku: 14, on_shelf_qty: 20 }
+          - { bay: 1, face: 2, slot: 2, sku: 15, on_shelf_qty: 12 }
+          - { bay: 2, face: 0, slot: 0, sku: 16, on_shelf_qty: 18 }
+          - { bay: 2, face: 0, slot: 1, sku: 17, on_shelf_qty: 10 }
+          - { bay: 2, face: 0, slot: 2, sku: 18, on_shelf_qty:  8 }
+          - { bay: 2, face: 1, slot: 0, sku: 11, on_shelf_qty: 15 }
+          - { bay: 2, face: 1, slot: 1, sku: 12, on_shelf_qty: 15 }
+          - { bay: 2, face: 1, slot: 2, sku: 13, on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 0, sku: 14, on_shelf_qty: 20 }
+          - { bay: 2, face: 2, slot: 1, sku: 15, on_shelf_qty: 12 }
+          - { bay: 2, face: 2, slot: 2, sku: 16, on_shelf_qty: 18 }
 
-    # Aisle 3 (z = +4): Ranch supplies and western apparel
+    # ── Aisle 3 (edge 6, z=+4): Western Apparel / Rodeo Gear / Leather ───
+    # SKUs 19-30: Cowboy Hat, Cowboy Boots, Red Bandana, Flannel Shirt,
+    #             Leather Belt, Denim Vest, Riding Spurs, Rodeo Rope,
+    #             Bull Rope Rosin, Leather Saddlebag, Leather Wallet,
+    #             Leather Journal
     "6":
       left_side:
-        bay_count: 1
+        bay_count: 3
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 17   # Lasso Rope
-            on_shelf_qty: 15
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 18   # Horse Feed Sack
-            on_shelf_qty: 15
+          - { bay: 0, face: 0, slot: 0, sku: 19, on_shelf_qty: 12 }
+          - { bay: 0, face: 0, slot: 1, sku: 20, on_shelf_qty:  8 }
+          - { bay: 0, face: 0, slot: 2, sku: 21, on_shelf_qty: 20 }
+          - { bay: 0, face: 1, slot: 0, sku: 22, on_shelf_qty: 15 }
+          - { bay: 0, face: 1, slot: 1, sku: 23, on_shelf_qty: 18 }
+          - { bay: 0, face: 1, slot: 2, sku: 24, on_shelf_qty: 12 }
+          - { bay: 0, face: 2, slot: 0, sku: 25, on_shelf_qty: 10 }
+          - { bay: 0, face: 2, slot: 1, sku: 26, on_shelf_qty: 10 }
+          - { bay: 0, face: 2, slot: 2, sku: 27, on_shelf_qty: 15 }
+          - { bay: 1, face: 0, slot: 0, sku: 28, on_shelf_qty:  6 }
+          - { bay: 1, face: 0, slot: 1, sku: 29, on_shelf_qty: 12 }
+          - { bay: 1, face: 0, slot: 2, sku: 30, on_shelf_qty: 10 }
+          - { bay: 1, face: 1, slot: 0, sku: 19, on_shelf_qty: 12 }
+          - { bay: 1, face: 1, slot: 1, sku: 20, on_shelf_qty:  8 }
+          - { bay: 1, face: 1, slot: 2, sku: 21, on_shelf_qty: 20 }
+          - { bay: 1, face: 2, slot: 0, sku: 22, on_shelf_qty: 15 }
+          - { bay: 1, face: 2, slot: 1, sku: 23, on_shelf_qty: 18 }
+          - { bay: 1, face: 2, slot: 2, sku: 24, on_shelf_qty: 12 }
+          - { bay: 2, face: 0, slot: 0, sku: 25, on_shelf_qty: 10 }
+          - { bay: 2, face: 0, slot: 1, sku: 26, on_shelf_qty: 10 }
+          - { bay: 2, face: 0, slot: 2, sku: 27, on_shelf_qty: 15 }
+          - { bay: 2, face: 1, slot: 0, sku: 28, on_shelf_qty:  6 }
+          - { bay: 2, face: 1, slot: 1, sku: 29, on_shelf_qty: 12 }
+          - { bay: 2, face: 1, slot: 2, sku: 30, on_shelf_qty: 10 }
+          - { bay: 2, face: 2, slot: 0, sku: 19, on_shelf_qty: 12 }
+          - { bay: 2, face: 2, slot: 1, sku: 20, on_shelf_qty:  8 }
+          - { bay: 2, face: 2, slot: 2, sku: 21, on_shelf_qty: 20 }
       right_side:
-        bay_count: 1
+        bay_count: 3
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 21   # Cowboy Hat
-            on_shelf_qty: 15
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 22   # Cowboy Boots
-            on_shelf_qty: 10
+          - { bay: 0, face: 0, slot: 0, sku: 22, on_shelf_qty: 15 }
+          - { bay: 0, face: 0, slot: 1, sku: 23, on_shelf_qty: 18 }
+          - { bay: 0, face: 0, slot: 2, sku: 24, on_shelf_qty: 12 }
+          - { bay: 0, face: 1, slot: 0, sku: 25, on_shelf_qty: 10 }
+          - { bay: 0, face: 1, slot: 1, sku: 26, on_shelf_qty: 10 }
+          - { bay: 0, face: 1, slot: 2, sku: 27, on_shelf_qty: 15 }
+          - { bay: 0, face: 2, slot: 0, sku: 28, on_shelf_qty:  6 }
+          - { bay: 0, face: 2, slot: 1, sku: 29, on_shelf_qty: 12 }
+          - { bay: 0, face: 2, slot: 2, sku: 30, on_shelf_qty: 10 }
+          - { bay: 1, face: 0, slot: 0, sku: 19, on_shelf_qty: 12 }
+          - { bay: 1, face: 0, slot: 1, sku: 20, on_shelf_qty:  8 }
+          - { bay: 1, face: 0, slot: 2, sku: 21, on_shelf_qty: 20 }
+          - { bay: 1, face: 1, slot: 0, sku: 22, on_shelf_qty: 15 }
+          - { bay: 1, face: 1, slot: 1, sku: 23, on_shelf_qty: 18 }
+          - { bay: 1, face: 1, slot: 2, sku: 24, on_shelf_qty: 12 }
+          - { bay: 1, face: 2, slot: 0, sku: 25, on_shelf_qty: 10 }
+          - { bay: 1, face: 2, slot: 1, sku: 26, on_shelf_qty: 10 }
+          - { bay: 1, face: 2, slot: 2, sku: 27, on_shelf_qty: 15 }
+          - { bay: 2, face: 0, slot: 0, sku: 28, on_shelf_qty:  6 }
+          - { bay: 2, face: 0, slot: 1, sku: 29, on_shelf_qty: 12 }
+          - { bay: 2, face: 0, slot: 2, sku: 30, on_shelf_qty: 10 }
+          - { bay: 2, face: 1, slot: 0, sku: 19, on_shelf_qty: 12 }
+          - { bay: 2, face: 1, slot: 1, sku: 20, on_shelf_qty:  8 }
+          - { bay: 2, face: 1, slot: 2, sku: 21, on_shelf_qty: 20 }
+          - { bay: 2, face: 2, slot: 0, sku: 22, on_shelf_qty: 15 }
+          - { bay: 2, face: 2, slot: 1, sku: 23, on_shelf_qty: 18 }
+          - { bay: 2, face: 2, slot: 2, sku: 24, on_shelf_qty: 12 }
 
 checkout_queues:
   - register_id: 10

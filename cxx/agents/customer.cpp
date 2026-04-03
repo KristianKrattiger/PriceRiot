@@ -54,7 +54,8 @@ void Customer::setBehavior(ICustomerBehavior *behavior) noexcept {
 // --- MAIN UPDATE LOGIC ---
 bool Customer::update(const float dt, const StoreGraph &store, const Basket &basket,
                       CheckoutQueueManager *queueManager,
-                      CollisionManager *collisionManager) {
+                      CollisionManager *collisionManager,
+                      std::default_random_engine *rng) {
     if (!behavior)
         return true;
 
@@ -68,6 +69,7 @@ bool Customer::update(const float dt, const StoreGraph &store, const Basket &bas
     // 1. Setup Context
     ICustomerBehaviorContext ctx{store, basket, (double)dt, queueManager};
     ctx.collisionManager = collisionManager;
+    ctx.rng = rng;
 
     // 2. Ask Strategy for Decision
     Decision dec = behavior->decide(*this, ctx);
@@ -123,9 +125,7 @@ void Customer::recalcWeight() {
     weight = 1.0 / (1 + std::exp(-0.1 * (loyaltyRating - 50)));
 }
 
-void Customer::calcFamSize() {
-    static std::random_device rd;
-    static std::mt19937 engine(rd());
+void Customer::calcFamSize(std::default_random_engine &engine) {
     constexpr double lambda = 3.0;
     std::poisson_distribution<int> sizeDist(lambda);
     int sample = 0;
@@ -206,7 +206,7 @@ newCustomer(std::vector<std::shared_ptr<Customer>> &customers, std::default_rand
     double income = incomeDist(engine);
 
     auto newCustPtr = std::make_shared<Customer>(newId, income, age, gender);
-    newCustPtr->calcFamSize();
+    newCustPtr->calcFamSize(engine);
     newCustPtr->setLoyaltyRating(50);
     newCustPtr->recalcWeight();
     customers.push_back(newCustPtr);

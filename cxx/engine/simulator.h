@@ -74,7 +74,15 @@ struct CustomerVisit {
     /** Tick the visit. Returns false when the agent should be despawned. */
     bool update(float dt, const StoreGraph &store,
                 CheckoutQueueManager *queueManager = nullptr,
-                CollisionManager *collisionManager = nullptr);
+                CollisionManager *collisionManager = nullptr,
+                std::default_random_engine *rng = nullptr);
+};
+
+/** Per-worker efficiency sample for time-series analytics. */
+struct WorkerMoodSample {
+    float  time           = 0.0f;
+    int    workerId       = 0;
+    double taskEfficiency = 1.0;
 };
 
 /** Lightweight snapshot of a Worker for UI / analytics. */
@@ -84,7 +92,6 @@ struct WorkerSnapshot {
     double   posZ          = 0.0;
     bool     canStock      = false;
     bool     canServe      = false;
-    double   happiness     = 1.0;
     double   taskEfficiency= 1.0;
     bool     hasTask       = false;
     TaskType taskType      = TaskType::StockShelves;
@@ -165,9 +172,8 @@ class Simulator {
 
     /**
      * Configure staff pool and automatic task generation.
-     * Notes:
-     *  - The worker pool itself is spawned in loadStore()/reset(),
-     *    so changing these values should be followed by reset() to apply counts.
+     * Immediately re-spawns the worker pool so the new counts take effect
+     * without needing a separate reset() call.
      */
     void setWorkerConfig(int numStockers,
                           int numCashiers,
@@ -177,6 +183,7 @@ class Simulator {
         numCashiers_       = std::max(0, numCashiers);
         autoStockTasks_    = autoStockTasks;
         autoRegisterTasks_ = autoRegisterTasks;
+        respawnWorkers();
     }
 
     // ── Accessors for the SFML Visualiser (sim.cpp) ─────────────────────────
@@ -209,6 +216,11 @@ class Simulator {
     /** Snapshot workers into simple POD structs for analytics/UI. */
     [[nodiscard]] std::vector<WorkerSnapshot> getWorkerSnapshots() const;
 
+    /** Per-worker happiness/efficiency samples collected during the run. */
+    [[nodiscard]] const std::vector<WorkerMoodSample> &getWorkerMoodSamples() const {
+        return workerMoodSamples_;
+    }
+
     /** Mission vs basket at checkout (captured before basket clear). Max 50 entries. */
     [[nodiscard]] const std::deque<MissionCheckoutSnapshot> &getMissionCheckoutLog() const {
         return missionCheckoutLog_;
@@ -217,11 +229,14 @@ class Simulator {
   private:
     // ── Initialisation ───────────────────────────────────────────────────────
     void loadStore();
+    /** Clear and re-spawn the worker pool based on current numStockers_/numCashiers_. */
+    void respawnWorkers();
 
     // ── Per-Tick Helpers ────────────────────────────────────────────────────
     void spawnAgent(float dt);
     void updateAgents(float dt);
     void updateWorkers(float dt);
+    void updateWorkerMoods();
     void generateTasks(float dt);
     void finalizeCheckout(CustomerVisit &agent);
     void removeDeadAgents();
@@ -279,6 +294,11 @@ class Simulator {
     // lane's queue at the same sample.
     std::vector<float>                queueSampleTimes_;
     std::vector<std::vector<int>>     queueLengthsHistory_;
+
+    // Worker mood time-series (sampled every kMoodUpdateInterval sim-seconds).
+    static constexpr float kMoodUpdateInterval = 10.0f;
+    float moodUpdateTimer_ = 0.0f;
+    std::vector<WorkerMoodSample> workerMoodSamples_;
 
     // Mission checkout log: snapshot (mission + basket) before basket clear. For UI.
     static constexpr size_t MISSION_CHECKOUT_LOG_MAX = 50;

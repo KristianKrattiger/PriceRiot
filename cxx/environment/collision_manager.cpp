@@ -179,18 +179,6 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
         }
     }
 
-    // #region agent log
-    if (overlapCount > 0 && (agent->getId() % 25 == 0)) {
-        const char *logPath = std::getenv("PRICERIOT_DEBUG_LOG");
-        if (!logPath || !logPath[0]) logPath = "C:/Users/krist/Projects/PriceRiot/debug-01e413.log";
-        std::ofstream lf(logPath, std::ios::app);
-        if (lf) {
-            auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-            lf << "{\"sessionId\":\"01e413\",\"hypothesisId\":\"H4\",\"location\":\"collision_manager.cpp:resolveCollisions\",\"message\":\"agent-agent overlaps resolved\",\"data\":{\"customerId\":" << agent->getId() << ",\"overlapCount\":" << overlapCount << "},\"timestamp\":" << ts << "}\n";
-        }
-    }
-    // #endregion
-
     // After agent-agent separation, current agent may have been pushed into an obstacle.
     // Resolve again so we never end the frame inside a shelf.
     if (physicsWorld) {

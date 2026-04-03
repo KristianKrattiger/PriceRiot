@@ -4,9 +4,12 @@
 #include "store_inventory.h"
 #include <../cmake-build-debug/_deps/yaml-cpp-src/include/yaml-cpp/yaml.h>
 #include <algorithm>
+#include <cctype>
+#include <fstream>
 #include <functional> // std::hash
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <unordered_map>
 
 namespace priceriot {
@@ -84,6 +87,80 @@ std::unordered_map<std::string, int> load_products_from_yaml(const YAML::Node &r
             p["total"] ? p["total"].as<int>() : yaml_get<int>(p, "initial_stock_total", 0);
 
         totals_by_sku[sku_str] += total_units;
+    }
+    return totals_by_sku;
+}
+
+// ------- Catalog loader from products CSV -------
+std::unordered_map<std::string, int> load_products_from_csv(const std::string &csvPath,
+                                                            Catalog &catalog) {
+    std::unordered_map<std::string, int> totals_by_sku;
+
+    std::ifstream in(csvPath);
+    if (!in.is_open()) {
+        std::cerr << "[Products] Could not open CSV: " << csvPath << "\n";
+        return totals_by_sku;
+    }
+
+    auto trim = [](std::string s) {
+        auto issp = [](unsigned char c) { return std::isspace(c); };
+        s.erase(s.begin(), std::find_if(s.begin(), s.end(), [&](unsigned char c){ return !issp(c); }));
+        s.erase(std::find_if(s.rbegin(), s.rend(), [&](unsigned char c){ return !issp(c); }).base(), s.end());
+        return s;
+    };
+
+    std::string line;
+    bool first = true;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+
+        // skip header row if it contains "sku"
+        if (first) {
+            first = false;
+            std::string lower = line;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c){ return std::tolower(c); });
+            if (lower.find("sku") != std::string::npos) continue;
+        }
+
+        std::stringstream ss(line);
+        std::string field;
+
+        // sku
+        if (!std::getline(ss, field, ',')) continue;
+        field = trim(field);
+        int sku_int = 0;
+        try { sku_int = std::stoi(field); } catch (...) { continue; }
+
+        // name
+        std::string name;
+        if (!std::getline(ss, name, ',')) name.clear();
+        name = trim(name);
+
+        // category
+        std::string category;
+        if (!std::getline(ss, category, ',')) category.clear();
+        category = trim(category);
+
+        // price
+        double price = 0.0;
+        if (std::getline(ss, field, ',')) {
+            try { price = std::stod(trim(field)); } catch (...) {}
+        }
+
+        // popularity
+        double pop = 0.0;
+        if (std::getline(ss, field, ',')) {
+            try { pop = std::stod(trim(field)); } catch (...) {}
+        }
+
+        if (catalog.productExists(sku_int)) {
+            catalog.updatePrice(sku_int, price);
+            catalog.updatePopularity(sku_int, pop);
+            catalog.updateCategory(sku_int, category);
+        } else {
+            catalog.addProduct(sku_int, name, price, category, pop);
+        }
     }
     return totals_by_sku;
 }

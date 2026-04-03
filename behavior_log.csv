@@ -1,0 +1,2 @@
+sim_time,customer_id,x,z,behavior_type,state_name,decision_type,decision_target_id,basket_size,edge_index,dwell_ticks
+# rng_seed=0

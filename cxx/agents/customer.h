@@ -33,7 +33,8 @@ class Customer : public Agent {
     // --- Core Logic ---
     bool update(float dt, const StoreGraph &store, const Basket &basket,
                 CheckoutQueueManager *queueManager = nullptr,
-                CollisionManager *collisionManager = nullptr);
+                CollisionManager *collisionManager = nullptr,
+                std::default_random_engine *rng = nullptr);
 
     // --- Navigation State (Agent wrappers) ---
     [[nodiscard]] int getCurrentEdgeIndex() const noexcept { return Agent::getCurrentEdgeIndex(); }
@@ -173,7 +174,7 @@ class Customer : public Agent {
     void setDwellTicks(int ticks);
     void updateLoyalty(int satisfaction);
     void recalcWeight();
-    void calcFamSize();
+    void calcFamSize(std::default_random_engine &engine);
 
     void setId(int id);
     void setLoyaltyRating(double rating);

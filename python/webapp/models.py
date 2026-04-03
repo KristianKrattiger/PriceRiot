@@ -16,6 +16,7 @@ class RunStatus(str, Enum):
 class RunConfig(BaseModel):
     """Configuration for a single simulation run."""
 
+    run_name: Optional[str] = Field(default=None, description="Optional user-supplied name for this run")
     store_yaml: str = Field(..., description="Path to store.yaml on disk")
     duration_seconds: float = Field(..., gt=0, description="Sim-time to run")
     spawn_interval: float = Field(
@@ -74,6 +75,12 @@ class RunResult(BaseModel):
 
     # Snapshot of workers at end of run (for now).
     workers: Optional[List[Dict[str, Any]]] = None
+
+    # Per-SKU revenue and quantity breakdown
+    sku_breakdown: Optional[List[Dict[str, Any]]] = None
+
+    # Worker efficiency time-series (sampled every 10 sim-seconds)
+    worker_timeseries: Optional[List[Dict[str, Any]]] = None
 
     # Aggregated KPIs for dashboard and comparison
     kpis: Dict[str, Any] = Field(default_factory=dict)

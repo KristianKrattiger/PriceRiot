@@ -1,4 +1,14 @@
-products_file: data/raw/products.csv
+products_file: data/raw/cowboy_products.csv
+
+days_of_operation: [Mon, Tue, Wed, Thu, Fri, Sat]
+
+hours_of_operation:
+  Mon: { open: 9, close: 19 }
+  Tue: { open: 9, close: 19 }
+  Wed: { open: 9, close: 19 }
+  Thu: { open: 9, close: 19 }
+  Fri: { open: 9, close: 20 }
+  Sat: { open: 9, close: 20 }
 
 # Store layout (X = depth left→right, Z = width top→bottom):
 #
@@ -155,6 +165,24 @@ nodes:
     entry_rate: 0.0
     exit_rate: 0.0
 
+  # ── Stockroom — rear corner of store, adjacent to exit ────────────────
+  - id: 9
+    type: Stockroom
+    x: 36.0
+    z: 4.0
+    length: 4.0
+    width: 4.0
+    shelf_left: 0.0
+    shelf_right: 0.0
+    blocked: 0.0
+    personal_space: 1.0
+    jam_density: 3.5
+    dwell_s: 0.0
+    service_rate: 0.0
+    agents: 0
+    entry_rate: 0.0
+    exit_rate: 0.0
+
   - id: 7
     type: Exit
     x: 36.0
@@ -173,6 +201,20 @@ nodes:
     exit_rate: 1.0
 
 edges:
+  # ── Stockroom → back-right junction (edge 13) ─────────────────────────
+  - id: 13
+    from: 9
+    to: 8
+    length: 16.0
+    width: 3.0
+    free_speed: 1.0
+    jam_density: 3.5
+    blocked: 0.0
+    flow: bi
+    orientation: fwd
+    shelf_left: 0.0
+    shelf_right: 0.0
+
   # Entrance → front-center junction (straight along X)
   - id: 1
     from: 1

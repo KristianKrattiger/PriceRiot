@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -3.11 --version)",
+      "Bash(python3.11 --version)",
+      "Bash(python:*)",
+      "Bash(cmake --build build --config Release)",
+      "Bash(PYTHONPATH=\"build;python\" py -3.11 tests/test_temporal_equivalence.py 2>&1)",
+      "Bash(cmake --build build --config Release --parallel 4)",
+      "Bash(PYTHONPATH=\"build;python\" python tests/test_temporal_equivalence.py)",
+      "Bash(PYTHONPATH=\"build/Release;build;python\" python tests/test_temporal_equivalence.py)",
+      "Bash($env:PYTHONPATH=\"build;python\")",
+      "Bash(mkdir -p \"C:/Users/krist/projects/PriceRiot/data/layouts\")",
+      "Bash(mkdir -p \"C:/Users/krist/projects/PriceRiot/python/webapp/frontend/src/components/layout\")",
+      "Bash(py -3.11 -c \"import sys; sys.path.insert\\(0,''python''\\); from python.webapp.app import app; print\\(''import OK''\\)\")",
+      "Bash(py -3.11 -c \":*)"
+    ]
+  }
+}

@@ -1,8 +1,6 @@
 #include "navmesh_pathfinder.h"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <fstream>
 #include <limits>
 #include <queue>
 #include <unordered_set>
@@ -35,9 +33,6 @@ std::vector<NavMeshPathfinder::PathPoint> NavMeshPathfinder::findPath(const NavM
 
     if (startPolyIdx == goalPolyIdx) {
         // Same polygon, direct path
-        // #region debug log
-        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H3\",\"location\":\"navmesh_pathfinder.cpp:findPath\",\"message\":\"Same polygon direct path\",\"data\":{\"startPolyIdx\":" << startPolyIdx << ",\"goalPolyIdx\":" << goalPolyIdx << ",\"startX\":" << startX << ",\"startZ\":" << startZ << ",\"endX\":" << endX << ",\"endZ\":" << endZ << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-        // #endregion
         return {{startX, startZ}, {endX, endZ}};
     }
 
@@ -132,16 +127,9 @@ std::vector<NavMeshPathfinder::PathPoint> NavMeshPathfinder::findPath(const NavM
     }
     std::reverse(polygonPath.begin(), polygonPath.end());
 
-    // #region debug log
-    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"navmesh_pathfinder.cpp:findPath\",\"message\":\"Polygon path before smooth\",\"data\":{\"polygonPathSize\":" << polygonPath.size() << ",\"startPolyIdx\":" << startPolyIdx << ",\"goalPolyIdx\":" << goalPolyIdx << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-    // #endregion
-
     // Smooth path and convert to waypoints
     std::vector<PathPoint> result = smoothPath(polygonPath, navmesh, startX, startZ, endX, endZ);
 
-    // #region debug log
-    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H1\",\"location\":\"navmesh_pathfinder.cpp:findPath\",\"message\":\"Waypoint count after smooth\",\"data\":{\"waypointCount\":" << result.size() << ",\"polygonPathSize\":" << polygonPath.size() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-    // #endregion
     return result;
 }
 
@@ -432,9 +420,6 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
 
     // Handle case where no valid portals were found
     if (leftBoundary.empty() || rightBoundary.empty()) {
-        // #region debug log
-        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H2\",\"location\":\"navmesh_pathfinder.cpp:smoothPath\",\"message\":\"No portals found\",\"data\":{\"polygonPathSize\":" << polygonPath.size() << ",\"portalsFound\":" << portalsFound << ",\"leftEmpty\":" << (leftBoundary.empty() ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-        // #endregion
         path.emplace_back(endX, endZ);
         return path;
     }
@@ -473,9 +458,6 @@ NavMeshPathfinder::smoothPath(const std::vector<int> &polygonPath, const NavMesh
     // Finalize the path at the destination
     path.emplace_back(endX, endZ);
 
-    // #region debug log
-    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H5\",\"location\":\"navmesh_pathfinder.cpp:smoothPath\",\"message\":\"Smooth path result\",\"data\":{\"pathSize\":" << path.size() << ",\"portalsFound\":" << portalsFound << ",\"numPortals\":" << leftBoundary.size() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-    // #endregion
     return path;
 }
 

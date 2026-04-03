@@ -7,10 +7,10 @@ from .storage import session_store
 
 
 class ComparisonEngine:
-    def compare_runs(self, run_ids: List[str]) -> Dict[str, Any]:
+    async def compare_runs(self, run_ids: List[str]) -> Dict[str, Any]:
         runs: List[RunResult] = []
         for rid in run_ids:
-            run = session_store.get_run(rid)
+            run = await session_store.async_get_run(rid)
             if run is None:
                 raise ValueError(f"Run {rid} not found")
             if run.status != RunStatus.COMPLETED:

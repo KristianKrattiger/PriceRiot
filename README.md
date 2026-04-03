@@ -4,6 +4,8 @@ A retail store simulation engine for generating synthetic transaction data, stud
 
 For deeper architectural detail see **[cxx/docs/ARCHITECTURE.md](cxx/docs/ARCHITECTURE.md)** and the store config schema in **[cxx/docs/CONFIGURATION.md](cxx/docs/CONFIGURATION.md)**.
 
+For a **phase-by-phase checklist** (worker movement, task effects, ingestion, SQLite, deferred API work), see **[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)**.
+
 ---
 
 ## What it does
@@ -14,8 +16,9 @@ For deeper architectural detail see **[cxx/docs/ARCHITECTURE.md](cxx/docs/ARCHIT
 - Worker agents (stockers, cashiers) accept prioritized tasks from a `TaskManager` — task compatibility, starvation mitigation, and happiness/efficiency coupling are all modeled
 - Exposes traffic heatmaps (per-shelf-cell visit counts) and queue depth time-series to Python
 - Runs headlessly from Python for data generation, or as a real-time SFML/ImGui visualiser
-- FastAPI + Vue 3 web app lets you configure runs, stream progress via SSE, compare KPIs and heatmaps across runs, and download results as CSV
-- POS ingestion pipeline cleans historical CSV data, maps SKUs, and extracts simulation parameters (spawn rate, basket size, price sensitivity)
+- FastAPI + Vue 3 web app: single-run uploads (YAML + optional POS), SSE progress, results dashboards, scenario comparison, optional **layout editor** tab, and **temporal / multi-run** jobs via the simulations API
+- POS ingestion pipeline cleans historical CSV data, maps SKUs, and extracts simulation parameters (applied at run time when POS data is attached)
+- **Temporal analytics**: date-range scheduling and multi-run orchestration in `python/analytics` plus CLI/scripts (`scripts/temporal_sim.py`, `scripts/multi_run.py`, `scripts/sanity_check.py`)
 
 ---
 
@@ -33,10 +36,10 @@ PriceRiot/
 │       ├── ARCHITECTURE.md     # Layer diagram and data-flow descriptions
 │       └── CONFIGURATION.md    # store.yaml schema reference
 ├── python/
-│   ├── analytics/              # run_simulation(), DataFrame converters, heatmaps
+│   ├── analytics/              # run_simulation(), temporal + orchestrator, DataFrame helpers
 │   ├── dashboard/              # Streamlit app (simulation + POS analysis modes)
 │   ├── ingestion/              # POS CSV cleaning, SKU mapping, parameter extraction
-│   ├── webapp/                 # FastAPI backend + Vue 3 frontend
+│   ├── webapp/                 # FastAPI (+ sim jobs), Vue 3 frontend, SQLite run store
 │   ├── run_analysis.py         # CLI: run sim → export CSVs
 │   ├── main.py                 # FastAPI entrypoint
 │   └── simulate.py             # Thin notebook/script wrapper
@@ -52,7 +55,10 @@ PriceRiot/
 │   └── test_simulation.py      # Smoke/integration tests for the simulation module
 └── scripts/
     ├── build_and_test.sh
-    └── build_and_test.ps1
+    ├── build_and_test.ps1
+    ├── temporal_sim.py         # CLI: date-range temporal simulation
+    ├── multi_run.py            # Batch / multi-run helper
+    └── sanity_check.py         # Regression-style sanity runs
 ```
 
 ---
@@ -209,11 +215,11 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 
 | Component | Notes |
 |---|---|
-| Worker agents | Full state machine: workers pathfind to task targets via navmesh before executing |
-| Worker task lifecycle | `StockShelves` completion restocks edge shelf cells (3 units/slot); happiness bumped on finish |
+| Worker agents | Idle → move along navmesh (with light collision avoidance) → execute task |
+| Worker task lifecycle | `StockShelves` completion applies restock via `Simulator::updateWorkers` (per-edge cells, 3 units/slot). Register tasks move workers to lane waypoints; queue service is driven by checkout flow (no separate `serviceQueueLane`-style hook) |
 | TaskManager | Priority queue with starvation mitigation, worker-task compatibility matching |
 | Auto task generation | `generateTasks()` monitors queue depth and shelf levels; assigns tasks to idle workers |
-| `set_worker_config` binding | Fully exposed in pybind11; Python analytics calls it directly |
+| `set_worker_config` binding | Exposed in pybind11; Python/analytics can adjust staff counts when constructing the sim |
 
 **Python / analytics layer**
 
@@ -228,13 +234,13 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 
 | Component | Notes |
 |---|---|
-| FastAPI backend | Run config, SSE progress streaming, multi-run comparison, CSV download |
-| SQLite persistence | Runs stored in `data/priceriot.db`; CSV blobs on disk in `data/runs/{id}/`; survives restarts |
-| `DELETE /api/runs/{id}` | Removes run from DB and cleans up CSV files |
-| `POST /api/runs/{id}/workers` | Updates stocker/cashier counts for queued runs |
-| `GET /api/runs/{id}/profile` | Returns POS-derived ingestion summary |
-| Vue 3 frontend | Run form, results view, workers panel (with Apply button), run comparison tab |
-| Ingestion profile panel | `IngestionProfile.vue` shows spawn rate, basket size, mission %, top SKUs after a POS-backed run |
+| FastAPI backend | `POST /api/runs` (upload + stream), run listing/detail, CSV + KPI export, comparison engine |
+| Temporal jobs | `POST /api/simulations` (202) and job/status/results endpoints for multi-day / batch workflows (`sim_runner`, `sim_storage`) |
+| SQLite persistence | Runs in `data/priceriot.db`; large CSVs under `data/runs/{id}/`; survives restarts |
+| `DELETE /api/runs/{id}` | Removes run record and cleans up on-disk CSV artifacts |
+| `GET /api/runs/{id}/profile` | POS-derived ingestion summary when a POS file backed the run |
+| Vue 3 frontend | Tabs: **Run** (datasets, YAML, sim config), **Results**, **Compare**, **Layout** (canvas + YAML export) |
+| Ingestion profile | Spawn interval / basket hints from POS; `IngestionProfile.vue` and run-time `extract_params` |
 | Streamlit dashboard | Simulation controls + charts, POS analysis mode |
 | Jupyter notebooks | End-to-end examples: transactions, heatmaps, queue time-series |
 
@@ -243,6 +249,7 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 | Component | Gap |
 |---|---|
 | Unit tests | Only smoke/integration tests; no per-module unit tests |
+| Queued-run staff edits | Plan called for `POST /api/runs/{id}/workers`; staff counts are set at creation today (see **IMPLEMENTATION_STATUS.md** Phase 6) |
 
 ---
 

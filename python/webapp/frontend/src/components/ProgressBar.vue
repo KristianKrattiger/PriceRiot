@@ -1,18 +1,16 @@
 <template>
-  <div class="w-full">
-    <div class="flex justify-between text-xs text-slate-300 mb-1">
+  <div class="space-y-1.5">
+    <div class="flex justify-between text-[11px] font-mono text-ink-ghost">
       <span>{{ label }}</span>
       <span>{{ percent }}%</span>
     </div>
-    <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
+    <div class="h-px bg-rim overflow-hidden relative">
       <div
-        class="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all"
+        class="absolute inset-y-0 left-0 bg-deep-teal transition-all duration-300"
         :style="{ width: percent + '%' }"
       ></div>
     </div>
-    <p v-if="message" class="mt-1 text-xs text-slate-400">
-      {{ message }}
-    </p>
+    <p v-if="message" class="text-[11px] text-ink-ghost">{{ message }}</p>
   </div>
 </template>
 
@@ -20,7 +18,6 @@
 defineProps({
   percent: { type: Number, default: 0 },
   message: { type: String, default: "" },
-  label: { type: String, default: "Simulation progress" }
+  label:   { type: String, default: "Simulation progress" },
 });
 </script>
-

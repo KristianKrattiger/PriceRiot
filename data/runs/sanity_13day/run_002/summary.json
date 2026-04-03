@@ -1,0 +1,110 @@
+{
+  "run_index": 2,
+  "seed": 43,
+  "start_date": "2024-01-01",
+  "end_date": "2024-01-13",
+  "store_yaml": "C:\\Users\\krist\\projects\\PriceRiot\\examples\\cowboy_market.yaml",
+  "transaction_count": 28,
+  "customer_count": 41,
+  "total_revenue": 17982.59,
+  "active_days": 12,
+  "peak_period": "morning",
+  "day_summaries": [
+    {
+      "date": "2024-01-01",
+      "day_of_week": 0,
+      "transactions": 24,
+      "revenue": 1523.27,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-02",
+      "day_of_week": 1,
+      "transactions": 19,
+      "revenue": 1387.03,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-03",
+      "day_of_week": 2,
+      "transactions": 26,
+      "revenue": 1684.55,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-04",
+      "day_of_week": 3,
+      "transactions": 25,
+      "revenue": 1460.24,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-05",
+      "day_of_week": 4,
+      "transactions": 20,
+      "revenue": 1015.0,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-06",
+      "day_of_week": 5,
+      "transactions": 24,
+      "revenue": 1684.15,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-08",
+      "day_of_week": 0,
+      "transactions": 21,
+      "revenue": 1523.23,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-09",
+      "day_of_week": 1,
+      "transactions": 27,
+      "revenue": 1767.54,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-10",
+      "day_of_week": 2,
+      "transactions": 28,
+      "revenue": 1989.91,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-11",
+      "day_of_week": 3,
+      "transactions": 21,
+      "revenue": 1283.97,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-12",
+      "day_of_week": 4,
+      "transactions": 26,
+      "revenue": 1672.6,
+      "open_hour": 9,
+      "close_hour": 10
+    },
+    {
+      "date": "2024-01-13",
+      "day_of_week": 5,
+      "transactions": 19,
+      "revenue": 991.1,
+      "open_hour": 9,
+      "close_hour": 10
+    }
+  ]
+}

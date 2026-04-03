@@ -9,6 +9,7 @@
 #ifndef CUSTOMER_BEHAVIOR_H
 #define CUSTOMER_BEHAVIOR_H
 
+#include <random>
 #include <vector>
 
 namespace priceriot {
@@ -27,6 +28,7 @@ struct ICustomerBehaviorContext {
     double dt;
     CheckoutQueueManager *queueManager = nullptr;   // Optional: for checkout queue integration
     CollisionManager *collisionManager = nullptr;   // Optional: for steering avoidance
+    std::default_random_engine *rng = nullptr;      // Simulator's seeded RNG for determinism
 };
 
 /** Output of ICustomerBehavior::decide(): action type and optional target. */

@@ -1,5 +1,6 @@
 #include "worker.h"
 #include "../environment/checkout_queue.h"
+#include "../environment/collision_manager.h"
 
 #include <cmath>
 
@@ -13,14 +14,8 @@ Worker::Worker(int id,
     : Agent(id),
       canStockShelves_(canStockShelves),
       canServeRegister_(canServeRegister),
-      happiness_(happiness),
-      taskEfficiency_(taskEfficiency) {}
-
-void Worker::setHappiness(double h) noexcept {
-    happiness_ = std::clamp(h, 0.0, 1.0);
-    // Simple coupling: lower happiness slightly reduces efficiency.
-    const double baseEff = std::clamp(taskEfficiency_, 0.1, 2.0);
-    taskEfficiency_ = baseEff * (0.5 + 0.5 * happiness_);
+      taskEfficiency_(taskEfficiency) {
+    (void)happiness; // parameter retained for ABI compatibility; no longer used
 }
 
 void Worker::setTaskEfficiency(double e) noexcept {
@@ -83,8 +78,6 @@ void Worker::tickExecuting(double dt) {
         completedTask_.type     = currentTask_.type;
         completedTask_.targetId = currentTask_.targetId;
 
-        happiness_ = std::min(1.0, happiness_ + 0.05);
-
         hasCurrentTask_       = false;
         state_                = State::Idle;
         remainingWorkSeconds_ = 0.0;
@@ -100,7 +93,7 @@ Worker::CompletedTask Worker::popCompletedTask() noexcept {
 bool Worker::update(float dt,
                     const StoreGraph &store,
                     CheckoutQueueManager *queueManager,
-                    CollisionManager * /*collisionManager*/) {
+                    CollisionManager *collisionManager) {
     switch (state_) {
         case State::Idle:
             if (!hasCurrentTask_ && !taskQueue_.empty())
@@ -155,18 +148,31 @@ bool Worker::update(float dt,
             // Advance along the computed path.
             if (waypointIdx_ < static_cast<int>(waypoints_.size())) {
                 const auto &wp  = waypoints_[static_cast<size_t>(waypointIdx_)];
-                const double dx = wp.x - posX_;
-                const double dz = wp.z - posZ_;
+                double dx = wp.x - posX_;
+                double dz = wp.z - posZ_;
                 const double dist = std::sqrt(dx * dx + dz * dz);
                 const double step = effectiveSpeed() * static_cast<double>(dt);
+
+                // Apply lightweight avoidance steering around nearby customers.
+                if (collisionManager) {
+                    double avoidX = 0.0, avoidZ = 0.0;
+                    collisionManager->getAvoidanceVector(posX_, posZ_, 0.3, avoidX, avoidZ, 1.5);
+                    if (dist > 1e-4) {
+                        // Blend avoidance with the direction to the waypoint.
+                        dx = dx / dist + avoidX * 0.4;
+                        dz = dz / dist + avoidZ * 0.4;
+                        const double blended = std::sqrt(dx * dx + dz * dz);
+                        if (blended > 1e-4) { dx /= blended; dz /= blended; }
+                    }
+                }
 
                 if (dist <= step) {
                     posX_ = wp.x;
                     posZ_ = wp.z;
                     ++waypointIdx_;
                 } else {
-                    posX_ += dx / dist * step;
-                    posZ_ += dz / dist * step;
+                    posX_ += dx * step;
+                    posZ_ += dz * step;
                 }
             } else {
                 // Reached the end of the path.

@@ -1,0 +1,110 @@
+{
+  "run_index": 1,
+  "seed": 42,
+  "start_date": "2026-03-01",
+  "end_date": "2026-03-14",
+  "store_yaml": "C:\\Users\\krist\\projects\\PriceRiot\\data\\tmp\\webapp_uploads\\cowboy_market.yaml",
+  "transaction_count": 18,
+  "customer_count": 18,
+  "total_revenue": 13458.07,
+  "active_days": 12,
+  "peak_period": "evening",
+  "day_summaries": [
+    {
+      "date": "2026-03-02",
+      "day_of_week": 0,
+      "transactions": 17,
+      "revenue": 1222.24,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-03",
+      "day_of_week": 1,
+      "transactions": 16,
+      "revenue": 911.37,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-04",
+      "day_of_week": 2,
+      "transactions": 17,
+      "revenue": 1089.84,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-05",
+      "day_of_week": 3,
+      "transactions": 16,
+      "revenue": 998.99,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-06",
+      "day_of_week": 4,
+      "transactions": 18,
+      "revenue": 1219.77,
+      "open_hour": 9,
+      "close_hour": 20
+    },
+    {
+      "date": "2026-03-07",
+      "day_of_week": 5,
+      "transactions": 18,
+      "revenue": 1340.35,
+      "open_hour": 9,
+      "close_hour": 20
+    },
+    {
+      "date": "2026-03-09",
+      "day_of_week": 0,
+      "transactions": 17,
+      "revenue": 1010.32,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-10",
+      "day_of_week": 1,
+      "transactions": 16,
+      "revenue": 962.92,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-11",
+      "day_of_week": 2,
+      "transactions": 17,
+      "revenue": 1298.32,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-12",
+      "day_of_week": 3,
+      "transactions": 16,
+      "revenue": 1073.38,
+      "open_hour": 9,
+      "close_hour": 19
+    },
+    {
+      "date": "2026-03-13",
+      "day_of_week": 4,
+      "transactions": 18,
+      "revenue": 1395.25,
+      "open_hour": 9,
+      "close_hour": 20
+    },
+    {
+      "date": "2026-03-14",
+      "day_of_week": 5,
+      "transactions": 18,
+      "revenue": 935.32,
+      "open_hour": 9,
+      "close_hour": 20
+    }
+  ]
+}

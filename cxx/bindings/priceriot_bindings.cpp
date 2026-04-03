@@ -273,6 +273,56 @@ PYBIND11_MODULE(simulation, m) {
            "Handy for pd.DataFrame([c.to_dict() for c in sim.get_customers()]).")
         .def("__repr__", &customerRepr);
 
+    // ─── OperatingSchedule ───────────────────────────────────────────────────
+    py::class_<DayWindow>(m, "DayWindow",
+        "Open/close window for a single store operating day.\n\n"
+        "Attributes:\n"
+        "    open_hour (int):  First hour the store accepts customers (24h, 0-23).\n"
+        "    close_hour (int): Last hour the store stops accepting customers (24h, 1-24).\n")
+        .def_readwrite("open_hour",  &DayWindow::open_hour)
+        .def_readwrite("close_hour", &DayWindow::close_hour)
+        .def("__repr__", [](const DayWindow &w) {
+            return "<DayWindow open=" + std::to_string(w.open_hour) +
+                   " close=" + std::to_string(w.close_hour) + ">";
+        });
+
+    py::class_<OperatingSchedule>(m, "OperatingSchedule",
+        "Weekly operating schedule parsed from hours_of_operation / days_of_operation.\n\n"
+        "Days are indexed 0=Mon … 6=Sun (matching Python datetime.weekday()).\n")
+        .def_property_readonly("open_days", [](const OperatingSchedule &s) {
+            py::list out;
+            for (bool v : s.open_days) out.append(v);
+            return out;
+        }, "List[bool] of length 7 — True means the store is open on that day (0=Mon … 6=Sun).")
+        .def_property_readonly("day_windows", [](const OperatingSchedule &s) {
+            py::list out;
+            for (const auto &w : s.day_windows) {
+                py::dict d;
+                d["open_hour"]  = w.open_hour;
+                d["close_hour"] = w.close_hour;
+                out.append(d);
+            }
+            return out;
+        }, "List[dict] of length 7 — {open_hour, close_hour} per day (0=Mon … 6=Sun).")
+        .def("is_open_on", &OperatingSchedule::is_open_on, py::arg("dow"),
+             "Return True if the store operates on day-of-week *dow* (0=Mon, 6=Sun).")
+        .def("window_for", [](const OperatingSchedule &s, int dow) {
+            return s.window_for(dow);
+        }, py::arg("dow"),
+             "Return the DayWindow for day-of-week *dow* (0=Mon, 6=Sun).")
+        .def("to_dict", [](const OperatingSchedule &s) {
+            py::dict out;
+            const char *names[7] = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
+            for (int i = 0; i < 7; ++i) {
+                py::dict d;
+                d["open"]      = s.open_days[static_cast<size_t>(i)];
+                d["open_hour"] = s.day_windows[static_cast<size_t>(i)].open_hour;
+                d["close_hour"]= s.day_windows[static_cast<size_t>(i)].close_hour;
+                out[names[i]]  = d;
+            }
+            return out;
+        }, "Return the full schedule as a dict keyed by abbreviated day name.");
+
     // ─── Simulator ────────────────────────────────────────────────────────────
     py::class_<Simulator>(m, "Simulator",
         "Headless retail store simulation engine.\n\n"
@@ -304,17 +354,26 @@ PYBIND11_MODULE(simulation, m) {
              "    RuntimeError: If the YAML file cannot be parsed.\n")
 
         // ── Tick API ──────────────────────────────────────────────────────────
+        // GIL is released for the duration of run()/step() so that multiple
+        // Simulator instances can truly execute in parallel on different threads
+        // (each Simulator owns all its mutable state — no shared writes).
         .def("run", &Simulator::run,
              py::arg("duration_seconds"),
              py::arg("dt") = 1.0f / 60.0f,
+             py::call_guard<py::gil_scoped_release>(),
              "Blocking headless run.\n\n"
              "Advances the simulation until ``elapsed_time >= duration_seconds``.\n\n"
+             "The GIL is released for the duration so that multiple Simulator\n"
+             "instances can run truly in parallel on a ThreadPoolExecutor.\n\n"
              "Args:\n"
              "    duration_seconds: How much sim-time to simulate.\n"
              "    dt: Fixed timestep per tick (default 1/60 s ≈ 16.7 ms).\n")
         .def("step", &Simulator::step,
              py::arg("dt"),
+             py::call_guard<py::gil_scoped_release>(),
              "Advance the simulation by exactly *dt* seconds (one tick).\n\n"
+             "The GIL is released so parallel step() calls on independent\n"
+             "Simulator instances are truly concurrent.\n\n"
              "Use this instead of run() when you need to inspect state between "
              "ticks or implement a custom loop.\n\n"
              "Args:\n"
@@ -395,6 +454,33 @@ PYBIND11_MODULE(simulation, m) {
              "is sample index aligned with get_queue_sample_times().\n")
 
         // ── Workers / tasks ───────────────────────────────────────────────────
+        .def("set_worker_config",
+             [](Simulator &s, int num_stockers, int num_cashiers,
+                bool auto_stock_tasks, bool auto_register_tasks) {
+                 s.setWorkerConfig(num_stockers, num_cashiers,
+                                   auto_stock_tasks, auto_register_tasks);
+             },
+             py::arg("num_stockers")        = 2,
+             py::arg("num_cashiers")        = 1,
+             py::arg("auto_stock_tasks")    = true,
+             py::arg("auto_register_tasks") = true,
+             "Configure worker pool counts and automatic task generation.\n\n"
+             "Call before reset()/run() to apply. Takes effect immediately by\n"
+             "re-spawning the worker pool.\n")
+
+        .def("get_worker_mood_samples", [](const Simulator &s) {
+            py::list out;
+            for (const auto &ms : s.getWorkerMoodSamples()) {
+                py::dict d;
+                d["time"]            = ms.time;
+                d["worker_id"]       = ms.workerId;
+                d["task_efficiency"] = ms.taskEfficiency;
+                out.append(std::move(d));
+            }
+            return out;
+        }, "Return a list of per-worker efficiency samples collected "
+           "every 10 sim-seconds during the run.")
+
         .def("get_workers", [](const Simulator &s) {
             py::list out;
             auto snaps = s.getWorkerSnapshots();
@@ -405,7 +491,6 @@ PYBIND11_MODULE(simulation, m) {
                 d["pos_z"]           = ws.posZ;
                 d["can_stock"]       = ws.canStock;
                 d["can_serve"]       = ws.canServe;
-                d["happiness"]       = ws.happiness;
                 d["task_efficiency"] = ws.taskEfficiency;
                 if (ws.hasTask) {
                     py::dict td;
@@ -419,6 +504,15 @@ PYBIND11_MODULE(simulation, m) {
             }
             return out;
         }, "Return a list of dicts describing current workers and their tasks.")
+
+        // ── Operating schedule ─────────────────────────────────────────────────
+        .def("get_operating_schedule",
+             [](const Simulator &s) -> OperatingSchedule {
+                 return s.getStore().operatingSchedule;
+             },
+             "Return the OperatingSchedule parsed from the store YAML.\n\n"
+             "Returns:\n"
+             "    OperatingSchedule\n")
 
         .def("__repr__", &simulatorRepr);
 }

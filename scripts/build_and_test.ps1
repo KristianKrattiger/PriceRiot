@@ -6,6 +6,67 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Set-Location $ProjectRoot
 
+# ── Resolve the Python interpreter ───────────────────────────────────────────
+# The simulation.pyd is compiled against a specific Python ABI.
+# If the build directory already contains a .pyd, honour its ABI tag (e.g. cp311).
+# Otherwise fall back to the first Python 3.x found via py launcher or PATH.
+
+function Get-PydPythonVersion {
+    $pyds = Get-ChildItem -Path "build" -Filter "simulation.cp*.pyd" -ErrorAction SilentlyContinue
+    if ($pyds) {
+        # Extract "311" from "simulation.cp311-win_amd64.pyd"
+        if ($pyds[0].Name -match 'simulation\.cp(\d+)-') {
+            return $Matches[1]
+        }
+    }
+    return $null
+}
+
+$PythonExe = $null
+$abiTag = Get-PydPythonVersion
+
+# Helper: ask a specific py-launcher version for its executable path.
+# Uses a temp .py file to avoid PowerShell 5's broken argument quoting for
+# native programs (semicolons and parens get parsed as PS syntax).
+function Get-PyExePath {
+    param([string]$Version)
+    $tmp = [System.IO.Path]::GetTempPath() + "get_pyexe_$Version.py"
+    "import sys" | Set-Content $tmp -Encoding UTF8
+    "print(sys.executable)" | Add-Content $tmp -Encoding UTF8
+    $path = & py "-$Version" $tmp 2>$null
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -eq 0 -and $path) { return $path.Trim() }
+    return $null
+}
+
+if ($abiTag) {
+    $major = $abiTag[0]
+    $minor = $abiTag.Substring(1)
+    Write-Host "Detected existing pyd built for Python $major.$minor — using that interpreter."
+    $PythonExe = Get-PyExePath "$major.$minor"
+}
+
+if (-not $PythonExe) {
+    # No existing pyd or launcher lookup failed — use the first py 3.x available.
+    foreach ($ver in @("3.11","3.12","3.13","3.10")) {
+        $candidate = Get-PyExePath $ver
+        if ($candidate) {
+            $PythonExe = $candidate
+            Write-Host "Selected Python ${ver}: $PythonExe"
+            break
+        }
+    }
+}
+
+if (-not $PythonExe) {
+    # Last resort: whatever 'python' resolves to.
+    $PythonExe = (Get-Command python -ErrorAction Stop).Source
+    Write-Host "Falling back to system python: $PythonExe"
+}
+
+Write-Host "Using Python: $PythonExe"
+
+# ── CMake configure & build ───────────────────────────────────────────────────
 $BuildDir = "build"
 if (-not (Test-Path $BuildDir)) {
     New-Item -ItemType Directory -Path $BuildDir | Out-Null
@@ -13,20 +74,19 @@ if (-not (Test-Path $BuildDir)) {
 Set-Location $BuildDir
 
 Write-Host "Configuring with CMake..."
-cmake ../cxx
+cmake ../cxx "-DPython_EXECUTABLE=$PythonExe" "-DPYTHON_EXECUTABLE=$PythonExe"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Building Release..."
+Write-Host "Building..."
 cmake --build . --config Release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Location $ProjectRoot
 
-# Python module may be in build/ or build/Release depending on CMake generator
+# ── PYTHONPATH ────────────────────────────────────────────────────────────────
 $env:PYTHONPATH = "$BuildDir;$BuildDir\Release$(if ($env:PYTHONPATH) { ";$env:PYTHONPATH" })"
 
-# On Windows with MinGW, the .pyd needs MinGW runtime DLLs. Copy them next to the .pyd
-# so the loader finds them (same dir as the module takes precedence).
+# ── Copy MinGW runtime DLLs next to the .pyd ─────────────────────────────────
 $cachePath = Join-Path $ProjectRoot (Join-Path $BuildDir "CMakeCache.txt")
 $mingwBin = $null
 if (Test-Path $cachePath) {
@@ -55,8 +115,9 @@ if ($mingwBin) {
     }
 }
 
-Write-Host "Running Python smoke test..."
-python tests/test_simulation.py
+# ── Smoke test ────────────────────────────────────────────────────────────────
+Write-Host "Running Python smoke test with $PythonExe..."
+& $PythonExe tests/test_simulation.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Done: simulator and simulation module built, smoke test passed."

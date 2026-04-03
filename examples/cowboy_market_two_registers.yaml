@@ -1,5 +1,15 @@
 products_file: data/raw/products.csv
 
+days_of_operation: [Mon, Tue, Wed, Thu, Fri, Sat]
+
+hours_of_operation:
+  Mon: { open: 9, close: 19 }
+  Tue: { open: 9, close: 19 }
+  Wed: { open: 9, close: 19 }
+  Thu: { open: 9, close: 19 }
+  Fri: { open: 9, close: 20 }
+  Sat: { open: 9, close: 20 }
+
 # Same layout as cowboy_market.yaml but with two registers side-by-side (z=-2, z=+2)
 # Both registers connect from the back cross-corridor center node (6)
 # and both exit to the shared exit node (7).

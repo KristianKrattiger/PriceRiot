@@ -1,0 +1,22 @@
+{
+  "run_index": 1,
+  "seed": 42,
+  "start_date": "2026-03-25",
+  "end_date": "2026-03-25",
+  "store_yaml": "C:\\Users\\krist\\projects\\PriceRiot\\data\\tmp\\webapp_uploads\\cowboy_market.yaml",
+  "transaction_count": 16,
+  "customer_count": 16,
+  "total_revenue": 964.92,
+  "active_days": 1,
+  "peak_period": "evening",
+  "day_summaries": [
+    {
+      "date": "2026-03-25",
+      "day_of_week": 2,
+      "transactions": 16,
+      "revenue": 964.92,
+      "open_hour": 9,
+      "close_hour": 19
+    }
+  ]
+}

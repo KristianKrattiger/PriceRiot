@@ -651,7 +651,6 @@ int main(int argc, char **argv) {
                 ImGui::Separator();
                 ImGui::Text("Role: %s", role);
                 ImGui::Text("Position: %.2f, %.2f", w.getPosX(), w.getPosZ());
-                ImGui::Text("Happiness: %.2f", w.getHappiness());
                 ImGui::Text("Efficiency: %.2f", w.getTaskEfficiency());
 
                 if (t) {

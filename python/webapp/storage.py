@@ -175,6 +175,37 @@ class Database:
             rows = await cur.fetchall()
         return [self._deserialise(r["data"]) for r in rows]
 
+    async def async_delete_all_runs(self, incomplete_only: bool = False) -> int:
+        """Delete runs in bulk. Returns the number of runs deleted."""
+        all_runs = await self.async_list_runs()
+        to_delete = (
+            [r for r in all_runs if r.status not in (RunStatus.COMPLETED, RunStatus.FAILED)]
+            if incomplete_only
+            else all_runs
+        )
+        count = 0
+        for run in to_delete:
+            if await self.async_delete_run(run.run_id):
+                count += 1
+
+        # Reset or recompute the run_id counter so numbering restarts correctly.
+        async with self._lock:
+            if not incomplete_only:
+                # All runs cleared — restart numbering from 1.
+                await self._db.execute(
+                    "UPDATE counters SET value = 0 WHERE name = 'run_id'"
+                )
+            else:
+                # Partial delete — align counter to the highest remaining run_id.
+                remaining = await self.async_list_runs()
+                max_id = max((int(r.run_id) for r in remaining), default=0)
+                await self._db.execute(
+                    "UPDATE counters SET value = ? WHERE name = 'run_id'", (max_id,)
+                )
+            await self._db.commit()
+
+        return count
+
     async def async_delete_run(self, run_id: str) -> bool:
         async with self._lock:
             result = await self.async_get_run(run_id)

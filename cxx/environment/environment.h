@@ -298,6 +298,46 @@ class Edge {
     EdgePolicy edgePolicy;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// OperatingSchedule — parsed from hours_of_operation / days_of_operation YAML
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Open/close window for a single day (hours in [0,24)). */
+struct DayWindow {
+    int open_hour  = 9;
+    int close_hour = 19;
+};
+
+/**
+ * Weekly operating schedule for the store.
+ * Indexed 0=Mon … 6=Sun (matching Python datetime.weekday()).
+ * Built by StoreGraph::loadFromYaml() from the optional YAML keys
+ * `days_of_operation` and `hours_of_operation`.
+ * Missing days are treated as closed; missing hour entries default to 09:00–19:00.
+ */
+struct OperatingSchedule {
+    static constexpr const char *kDayNames[7] = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
+
+    // Which days the store is open (0=Mon … 6=Sun).
+    std::array<bool,       7> open_days   = {true, true, true, true, true, true, false};
+    // Operating window per day (meaningful only when open_days[i]==true).
+    std::array<DayWindow, 7> day_windows  = {};
+
+    bool     is_open_on(int dow) const noexcept {
+        return dow >= 0 && dow < 7 && open_days[static_cast<size_t>(dow)];
+    }
+    const DayWindow &window_for(int dow) const noexcept {
+        return day_windows[static_cast<size_t>(dow)];
+    }
+
+    /** Map abbreviated day name ("Mon".."Sun") to 0-based index, or -1 if unknown. */
+    static int day_index(const std::string &name) noexcept {
+        for (int i = 0; i < 7; ++i)
+            if (name == kDayNames[i]) return i;
+        return -1;
+    }
+};
+
 /**
  * Complete store graph: nodes, edges, adjacency, navmesh, and physics world.
  * Load from YAML via loadFromYaml(). Build navmesh/physics via buildNavMesh() and buildPhysicsWorld().
@@ -410,6 +450,7 @@ class StoreGraph {
     }
 
     priceriot::Products catalog;
+    OperatingSchedule   operatingSchedule;
 
   private:
     std::vector<std::unique_ptr<Node>> nodes;

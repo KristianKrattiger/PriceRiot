@@ -1,2 +1,5 @@
 analytics
+dashboard
 data
+ingestion
+webapp

@@ -33,10 +33,7 @@ class Worker : public Agent {
     [[nodiscard]] bool canStock() const noexcept { return canStockShelves_; }
     [[nodiscard]] bool canServe() const noexcept { return canServeRegister_; }
 
-    // Wellbeing / performance
-    [[nodiscard]] double getHappiness() const noexcept { return happiness_; }
-    void setHappiness(double h) noexcept;
-
+    // Performance — efficiency in [0.1, 2.0]; 1.0 is the neutral baseline.
     [[nodiscard]] double getTaskEfficiency() const noexcept { return taskEfficiency_; }
     void setTaskEfficiency(double e) noexcept;
 
@@ -67,8 +64,7 @@ class Worker : public Agent {
   private:
     bool   canStockShelves_{false};
     bool   canServeRegister_{false};
-    double happiness_{1.0};
-    double taskEfficiency_{1.0}; // 0-2 range typically; scales speed / work rate
+    double taskEfficiency_{1.0}; // current operative efficiency; range [0.1, 2.0]
 
     State state_{State::Idle};
 

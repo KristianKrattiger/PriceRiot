@@ -22,7 +22,7 @@
 namespace priceriot {
 
 namespace {
-constexpr bool kAgentLogEnabled = true;
+constexpr bool kAgentLogEnabled = false;
 /// Behavioural personal space radius (m) for separation forces.
 /// Kept tight so the avoidance bubble isn't visible at normal walking distances.
 constexpr double kPersonalSpaceRadius = 0.9;
@@ -39,8 +39,10 @@ struct NullLogStream {
 using AgentLogStream = std::conditional_t<kAgentLogEnabled, std::ofstream, NullLogStream>;
 
 // Jitter generator for symmetry breaking in crowd flow.
+// Fixed seed makes movement deterministic per-run; the simulator's seeded RNG
+// drives all decision-making randomness, so this only affects path micro-jitter.
 static std::mt19937 &jitterRng() {
-    static std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng(12345u);
     return rng;
 }
 static std::uniform_real_distribution<double> &jitterDist() {
@@ -474,14 +476,15 @@ static bool sideHasInventory(const priceriot::ShelfSide &side) {
 }
 
 /** Determine which side to interact with based on inventory availability. */
-static bool chooseInteractionSide(const priceriot::EdgeCell &cell) {
+static bool chooseInteractionSide(const priceriot::EdgeCell &cell,
+                                  std::default_random_engine *rng) {
     bool leftHas = sideHasInventory(cell.get_left());
     bool rightHas = sideHasInventory(cell.get_right());
     if (leftHas && !rightHas) return true;  // Left side
     if (rightHas && !leftHas) return false; // Right side
     // Both or neither: pick randomly
-    static std::mt19937 sideRng(std::random_device{}());
-    return sideRng() % 2 == 0;
+    if (rng) return (*rng)() % 2 == 0;
+    return true; // deterministic fallback if no RNG provided
 }
 
 Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ctx) {
@@ -559,6 +562,28 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         return {Decision::Move};
     }
 
+    // InQueue settled: dwell expired and not walking — check queue position.
+    // This runs before any navmesh/navigation code so checkout fires regardless
+    // of distOnEdge, preventing the navigation failsafe from routing the customer
+    // to the exit before they've paid.
+    if (state == InQueue && !c.isWalkingToQueuePos()) {
+        bool atFront = true;
+        if (ctx.queueManager && c.isInQueue()) {
+            atFront = ctx.queueManager->isAtFront(c.getQueueLaneId(), c.getId());
+        }
+        if (atFront) {
+            if (ctx.queueManager && c.isInQueue()) {
+                ctx.queueManager->advanceQueue(c.getQueueLaneId());
+                c.setInQueue(false);
+                c.setQueueLaneId(-1);
+            }
+            state = HeadingToExit;
+            return {Decision::Checkout, -1, 5.0f};
+        }
+        c.setDwellTicks(30);
+        return {Decision::Wait};
+    }
+
     // Check if navmesh is available and use hybrid navigation
     bool useNavmesh = ctx.store.hasNavMesh();
 
@@ -606,12 +631,41 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 c.setNavmeshPath({});
                 c.setUsingNavmesh(false);
                 if (state == HeadingToCheckout) {
+                    if (ctx.queueManager) {
+                        int laneId = ctx.queueManager->selectLane(
+                            c.getPosX(), c.getPosZ(), c.getPatience(), c.getCrowdSensitivity());
+                        if (laneId >= 0) {
+                            CheckoutQueueManager* qmPtr = ctx.queueManager;
+                            int custId = c.getId();
+                            ctx.queueManager->joinQueue(laneId, custId);
+                            c.setQueueLaneId(laneId);
+                            c.setInQueue(true);
+                            ctx.queueManager->registerAdvanceCallback(custId,
+                                [&c, qmPtr, laneId, custId](int, int newPos) {
+                                    c.setQueuePosition(newPos);
+                                    if (qmPtr) {
+                                        auto newWp = qmPtr->getQueueWaypoint(laneId, custId);
+                                        c.setQueueTarget(newWp.x, newWp.z);
+                                        c.setWalkingToQueuePos(true);
+                                    }
+                                });
+                        }
+                    }
                     state = InQueue;
-                    const auto &regNode =
-                        ctx.store.nodeAt(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode());
-                    double rate = regNode.getServiceRate();
-                    int serviceTicks = (rate > 0.01) ? static_cast<int>((1.0 / rate) * 60.0) : 300;
-                    c.setDwellTicks(serviceTicks);
+                    // Fix: navmesh resets distOnEdge to 0 at path start; set it to
+                    // edge length so the node-arrival gate fires if reached.
+                    c.setDistOnEdge(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getLength());
+                    // Only start the service timer if this customer is already at the
+                    // front of the queue. Non-front customers get a short initial dwell
+                    // then fall into the 30-tick polling loop via the early InQueue check.
+                    if (ctx.queueManager && c.getQueueLaneId() >= 0 &&
+                        ctx.queueManager->isAtFront(c.getQueueLaneId(), c.getId())) {
+                        const auto &regNode =
+                            ctx.store.nodeAt(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode());
+                        double rate = regNode.getServiceRate();
+                        int serviceTicks = (rate > 0.01) ? static_cast<int>((1.0 / rate) * 60.0) : 300;
+                        c.setDwellTicks(serviceTicks);
+                    }
                     return {Decision::Wait};
                 }
                 if (state == HeadingToExit) {
@@ -724,9 +778,9 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 velZ = dirZ * (1.0 - blendW) + (sepZ * invSepMag) * blendW;
             }
 
-            // Symmetry-breaking jitter
-            double jx = jitterDist()(jitterRng());
-            double jz = jitterDist()(jitterRng());
+            // Symmetry-breaking jitter (use seeded RNG for determinism; fall back to jitterRng)
+            double jx = ctx.rng ? jitterDist()(*ctx.rng) : jitterDist()(jitterRng());
+            double jz = ctx.rng ? jitterDist()(*ctx.rng) : jitterDist()(jitterRng());
             velX += jx;
             velZ += jz;
 
@@ -758,19 +812,6 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 newX = c.getPosX() + moveX;
                 newZ = c.getPosZ() + moveZ;
             }
-
-            // #region agent log
-            if (ctx.collisionManager && (c.getId() % 25 == 0)) {
-                const char *logPath = std::getenv("PRICERIOT_DEBUG_LOG");
-                if (!logPath || !logPath[0]) logPath = "C:/Users/krist/Projects/PriceRiot/debug-01e413.log";
-                std::ofstream lf(logPath, std::ios::app);
-                if (lf) {
-                    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                    const double sepMag = std::sqrt(sepX * sepX + sepZ * sepZ);
-                    lf << "{\"sessionId\":\"01e413\",\"hypothesisId\":\"H2\",\"location\":\"customer_behavior.cpp:navmesh_avoid\",\"message\":\"avoidance and collide check\",\"data\":{\"customerId\":" << c.getId() << ",\"sepMag\":" << sepMag << ",\"wouldCollide\":" << (wouldCollide ? "true" : "false") << "},\"timestamp\":" << ts << "}\n";
-                }
-            }
-            // #endregion
 
             if (ctx.store.hasPhysicsWorld()) {
                 const PhysicsWorld &physics = ctx.store.getPhysicsWorld();
@@ -804,9 +845,6 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                                         // the shelf using the collision normal, then clear the
                                         // path but keep usingNavmesh=true so the cooldown check
                                         // prevents an immediate bad recalculation.
-                                        // #region debug log
-                                        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H5\",\"location\":\"customer_behavior.cpp:navmesh_blocked_fallback\",\"message\":\"Completely blocked, clear path\",\"data\":{\"customerId\":" << c.getId() << ",\"posX\":" << c.getPosX() << ",\"posZ\":" << c.getPosZ() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-                                        // #endregion
                                         {
                                             double snapX = c.getPosX() + normalX * (penetration + agentRadius * 0.5 + 0.1);
                                             double snapZ = c.getPosZ() + normalZ * (penetration + agentRadius * 0.5 + 0.1);
@@ -819,9 +857,6 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                                     }
                                 } else {
                                     // No collision info — generic snap then cooldown.
-                                    // #region debug log
-                                    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H5\",\"location\":\"customer_behavior.cpp:navmesh_nocollinfo_fallback\",\"message\":\"No collision info, clear path\",\"data\":{\"customerId\":" << c.getId() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-                                    // #endregion
                                     {
                                         Circle snapCircle(c.getPosX(), c.getPosZ(), agentRadius);
                                         if (physics.checkCollision(snapCircle)) {
@@ -838,14 +873,6 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     }
                 }
             }
-
-            // #region debug log
-            {
-                bool inObst = ctx.store.hasPhysicsWorld() && !ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, agentRadius);
-                std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
-                if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"customer_behavior.cpp:navmesh_move\",\"message\":\"Navmesh step toward waypoint\",\"data\":{\"customerId\":" << c.getId() << ",\"posBeforeX\":" << c.getPosX() << ",\"posBeforeZ\":" << c.getPosZ() << ",\"waypointX\":" << waypoint.first << ",\"waypointZ\":" << waypoint.second << ",\"newPosX\":" << newX << ",\"newPosZ\":" << newZ << ",\"inObstacleAfter\":" << (inObst ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-            }
-            // #endregion
 
             // Update position using setter
             c.setPosition(newX, newZ);
@@ -887,10 +914,9 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                         !skus.empty()) {
                         // Set sideband interaction state
                         c.setTargetCellIdx(cellIdx);
-                        c.setInteractingLeftSide(chooseInteractionSide(currentEdge.cells[cellIdx]));
+                        c.setInteractingLeftSide(chooseInteractionSide(currentEdge.cells[cellIdx], ctx.rng));
                         // Randomized dwell: 2-5 seconds at 60 ticks/sec = 120-300 ticks
-                        static std::mt19937 dwellRng(std::random_device{}());
-                        int dwellTicks = 120 + static_cast<int>(dwellRng() % 181);
+                        int dwellTicks = ctx.rng ? 120 + static_cast<int>((*ctx.rng)() % 181) : 210;
                         c.setDwellTicks(dwellTicks);
                         // #region agent log
                         { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer_behavior.cpp:dwell_start\",\"message\":\"Starting dwell at new cell\",\"data\":{\"customerId\":" << c.getId() << ",\"cellIdx\":" << cellIdx << ",\"skuCount\":" << skus.size() << ",\"dwellTicks\":" << dwellTicks << ",\"leftSide\":" << (c.isInteractingLeftSide()?"true":"false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
@@ -901,14 +927,14 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 // Same cell, dwell complete - attempt pick once per cell
                 else if (c.getLastPickAttemptCell() != cellIdx) {
                     c.setLastPickAttemptCell(cellIdx);
-                    static std::mt19937 rng(std::random_device{}());
                     int pickChance = 80;
                     if (c.getImpulsivity() > 0.4)
                         pickChance = 90;
-                    if (rng() % 100 < pickChance) {
+                    auto pickRoll = [&]() -> unsigned { return ctx.rng ? (*ctx.rng)() : 50u; };
+                    if (pickRoll() % 100 < static_cast<unsigned>(pickChance)) {
                         if (const auto skus = getSkusInCell(currentEdge.cells[cellIdx]);
                             !skus.empty()) {
-                            int chosenSku = skus[rng() % skus.size()];
+                            int chosenSku = skus[pickRoll() % skus.size()];
                             if (c.getPriceSensitivity() > 0.4) {
                                 std::vector<std::pair<int, double>> skuPrices;
                                 for (int sku : skus) {
@@ -924,7 +950,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                                 for (size_t i = 0; i < n; ++i)
                                     weights[i] = static_cast<double>(n - i);
                                 std::discrete_distribution<size_t> dist(weights.begin(), weights.end());
-                                chosenSku = skuPrices[dist(rng)].first;
+                                chosenSku = skuPrices[ctx.rng ? dist(*ctx.rng) : 0].first;
                             }
                             // #region agent log
                             {
@@ -981,8 +1007,8 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 if (ctx.store.nodeAt(i).getNodeType() == Node::NodeType::Junction)
                     junctionIds.push_back(ctx.store.nodeAt(i).getNodeId());
             }
-            static std::mt19937 rngPreferred(std::random_device{}());
-            std::shuffle(junctionIds.begin(), junctionIds.end(), rngPreferred);
+            if (ctx.rng)
+                std::shuffle(junctionIds.begin(), junctionIds.end(), *ctx.rng);
             for (size_t i = 0; i < std::min(size_t(3), junctionIds.size()); ++i)
                 preferredAisleNodes.push_back(junctionIds[i]);
         }
@@ -992,8 +1018,7 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             if (ctx.basket.getSize() >= 5)
                 state = HeadingToCheckout;
             // Random chance to finish shopping
-            static std::mt19937 rng(std::random_device{}());
-            if (rng() % 100 < 10)
+            if (ctx.rng && (*ctx.rng)() % 100 < 10)
                 state = HeadingToCheckout;
         }
 
@@ -1120,11 +1145,11 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 else
                     other.push_back(i);
             }
-            static std::mt19937 rng(std::random_device{}());
+            auto navRoll = [&]() -> unsigned { return ctx.rng ? (*ctx.rng)() : jitterRng()(); };
             std::vector<int> *choice =
-                !preferred.empty() && (other.empty() || rng() % 100 < 70) ? &preferred : &other;
+                !preferred.empty() && (other.empty() || navRoll() % 100 < 70) ? &preferred : &other;
             if (!choice->empty()) {
-                nextEdge = (*choice)[static_cast<size_t>(rng()) % choice->size()];
+                nextEdge = (*choice)[static_cast<size_t>(navRoll()) % choice->size()];
                 targetNodeId = ctx.store.nodeAt(ctx.store.edgeAt(nextEdge).getToNode()).getNodeId();
             }
             // #region agent log
@@ -1235,18 +1260,6 @@ Decision DefaultBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 c.setNavmeshPath(waypoints);
                 c.setUsingNavmesh(true);
                 c.setCachedGoal(endX, endZ);
-
-                // #region debug log
-                if (ctx.store.hasPhysicsWorld()) {
-                    const PhysicsWorld &pw = ctx.store.getPhysicsWorld();
-                    int inObst = 0;
-                    for (const auto &w : waypoints)
-                        if (!pw.isValidPosition(w.first, w.second, 0.35)) ++inObst;
-                    double fx = waypoints.empty() ? 0 : waypoints.front().first, fz = waypoints.empty() ? 0 : waypoints.front().second;
-                    double lx = waypoints.empty() ? 0 : waypoints.back().first, lz = waypoints.empty() ? 0 : waypoints.back().second;
-                    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H1\",\"location\":\"customer_behavior.cpp:navmesh_path_set\",\"message\":\"Path waypoints obstacle check\",\"data\":{\"customerId\":" << c.getId() << ",\"pathSize\":" << waypoints.size() << ",\"waypointsInObstacle\":" << inObst << ",\"firstWpX\":" << fx << ",\"firstWpZ\":" << fz << ",\"lastWpX\":" << lx << ",\"lastWpZ\":" << lz << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-                }
-                // #endregion
 
                 // Update current edge index for compatibility
                 c.setCurrentEdgeIndex(nextEdge);
@@ -1390,6 +1403,27 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         return {Decision::Move};
     }
 
+    // InQueue settled: same early-exit checkout as DefaultBehavior — ensures front
+    // customers check out and non-front customers poll every 30 ticks, without
+    // depending on the distOnEdge gate or the node-arrival block being reached.
+    if (state == InQueue && !c.isWalkingToQueuePos()) {
+        bool atFront = true;
+        if (ctx.queueManager && c.isInQueue()) {
+            atFront = ctx.queueManager->isAtFront(c.getQueueLaneId(), c.getId());
+        }
+        if (atFront) {
+            if (ctx.queueManager && c.isInQueue()) {
+                ctx.queueManager->leaveQueue(c.getQueueLaneId(), c.getId());
+                ctx.queueManager->unregisterCallback(c.getId());
+            }
+            c.setInQueue(false);
+            state = HeadingToExit;
+            return {Decision::Checkout, -1, 5.0f};
+        }
+        c.setDwellTicks(30);
+        return {Decision::Wait};
+    }
+
     if (state == Entering) {
         state = MissionBrowse;
         missionSkus.clear();
@@ -1420,8 +1454,8 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         // Now randomly select from available SKUs only
         // Mission size based on customer demographics (family size and income)
         if (!availableSkus.empty()) {
-            static std::mt19937 rngMission(std::random_device{}());
-            std::shuffle(availableSkus.begin(), availableSkus.end(), rngMission);
+            if (ctx.rng)
+                std::shuffle(availableSkus.begin(), availableSkus.end(), *ctx.rng);
 
             // Base mission size from family size (larger families need more items)
             int baseMission = std::max(2, std::min(6, c.getFamilySize() + 1));
@@ -1433,7 +1467,8 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
             // Final mission size with some randomness (+/- 1 item)
             int targetSize = static_cast<int>(baseMission * incomeMultiplier);
             std::uniform_int_distribution<int> variance(-1, 1);
-            size_t n = static_cast<size_t>(std::max(2, std::min(8, targetSize + variance(rngMission))));
+            size_t n = static_cast<size_t>(std::max(2, std::min(8,
+                ctx.rng ? targetSize + variance(*ctx.rng) : targetSize)));
             n = std::min(availableSkus.size(), n);
 
             for (size_t i = 0; i < n; ++i)
@@ -1485,11 +1520,34 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 c.setNavmeshPath({});
                 c.setUsingNavmesh(false);
                 if (state == HeadingToCheckout) {
-                    state = HeadingToExit;
-                    return {Decision::Checkout,
-                            ctx.store.nodeAt(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getToNode())
-                                .getNodeId(),
-                            5.0f};
+                    if (ctx.queueManager) {
+                        int laneId = ctx.queueManager->selectLane(
+                            c.getPosX(), c.getPosZ(), c.getPatience(), c.getCrowdSensitivity());
+                        if (laneId >= 0) {
+                            CheckoutQueueManager* qmPtr = ctx.queueManager;
+                            int custId = c.getId();
+                            ctx.queueManager->joinQueue(laneId, custId);
+                            c.setQueueLaneId(laneId);
+                            c.setInQueue(true);
+                            auto wp = ctx.queueManager->getQueueWaypoint(laneId, custId);
+                            c.setQueueTarget(wp.x, wp.z);
+                            c.setWalkingToQueuePos(true);
+                            ctx.queueManager->registerAdvanceCallback(custId,
+                                [&c, qmPtr, laneId, custId](int, int newPos) {
+                                    c.setQueuePosition(newPos);
+                                    if (qmPtr) {
+                                        auto newWp = qmPtr->getQueueWaypoint(laneId, custId);
+                                        c.setQueueTarget(newWp.x, newWp.z);
+                                        c.setWalkingToQueuePos(true);
+                                    }
+                                });
+                        }
+                    }
+                    state = InQueue;
+                    // Same fix as DefaultBehavior: ensure distOnEdge satisfies the
+                    // node-arrival gate after walking to queue position and dwell expires.
+                    c.setDistOnEdge(ctx.store.edgeAt(c.getCurrentEdgeIndex()).getLength());
+                    return {Decision::Move};
                 }
                 if (state == HeadingToExit) {
                     state = Exiting;
@@ -1528,8 +1586,8 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 velZ = dirZ * (1.0 - blendW) + (sepZ * invSepMag) * blendW;
             }
 
-            double jx = jitterDist()(jitterRng());
-            double jz = jitterDist()(jitterRng());
+            double jx = ctx.rng ? jitterDist()(*ctx.rng) : jitterDist()(jitterRng());
+            double jz = ctx.rng ? jitterDist()(*ctx.rng) : jitterDist()(jitterRng());
             velX += jx;
             velZ += jz;
 
@@ -1574,9 +1632,6 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     return {Decision::Move};
                 }
             }
-            // #region debug log
-            { bool inObst = ctx.store.hasPhysicsWorld() && !ctx.store.getPhysicsWorld().isValidPosition(newX, newZ, 0.35); std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H4\",\"location\":\"customer_behavior.cpp:mission_navmesh_move\",\"message\":\"Mission navmesh step\",\"data\":{\"customerId\":" << c.getId() << ",\"posBeforeX\":" << c.getPosX() << ",\"posBeforeZ\":" << c.getPosZ() << ",\"waypointX\":" << waypoint.first << ",\"waypointZ\":" << waypoint.second << ",\"newPosX\":" << newX << ",\"newPosZ\":" << newZ << ",\"inObstacleAfter\":" << (inObst ? "true" : "false") << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-            // #endregion
             c.setPosition(newX, newZ);
             if (c.getCurrentEdgeIndex() >= 0)
                 c.setDistOnEdge(std::min(c.getDistOnEdge() + moveDist,
@@ -1613,12 +1668,11 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
         if (loci.empty()) {
             ++missionIndex; /* skip — no valid stall away from junctions */
         } else {
-            static std::mt19937 rngMb(std::random_device{}());
-            size_t idx = static_cast<size_t>(rngMb()) % loci.size();
+            size_t idx = ctx.rng ? static_cast<size_t>((*ctx.rng)()) % loci.size() : 0;
             int e = loci[idx].first, cell = loci[idx].second;
             // Determine which side has the SKU and path to stall position
             const auto &targetCell = ctx.store.edgeAt(e).cells[static_cast<size_t>(cell)];
-            bool leftSide = chooseInteractionSide(targetCell);
+            bool leftSide = chooseInteractionSide(targetCell, ctx.rng);
             c.setTargetCellIdx(cell);
             c.setInteractingLeftSide(leftSide);
             auto [tx, tz] = ctx.store.getStallPosition(e, cell, leftSide);
@@ -1654,15 +1708,6 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                 c.setNavmeshPath(waypoints);
                 c.setUsingNavmesh(true);
                 c.setCachedGoal(tx, tz);
-                // #region debug log
-                if (ctx.store.hasPhysicsWorld()) {
-                    const PhysicsWorld &pw = ctx.store.getPhysicsWorld();
-                    int inObst = 0;
-                    for (const auto &w : waypoints)
-                        if (!pw.isValidPosition(w.first, w.second, 0.35)) ++inObst;
-                    { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H1\",\"location\":\"customer_behavior.cpp:mission_path_set\",\"message\":\"Mission path waypoints obstacle check\",\"data\":{\"customerId\":" << c.getId() << ",\"pathSize\":" << waypoints.size() << ",\"waypointsInObstacle\":" << inObst << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-                }
-                // #endregion
                 c.setCurrentEdgeIndex(e);
                 c.setDistOnEdge(0.0);
                 missionTargetEdgeIdx = e;
@@ -1790,15 +1835,6 @@ Decision MissionBehavior::decide(Customer &c, const ICustomerBehaviorContext &ct
                     c.setNavmeshPath(waypoints);
                     c.setUsingNavmesh(true);
                     c.setCachedGoal(tn.getX(), tn.getZ());
-                    // #region debug log
-                    if (ctx.store.hasPhysicsWorld()) {
-                        const PhysicsWorld &pw = ctx.store.getPhysicsWorld();
-                        int inObst = 0;
-                        for (const auto &w : waypoints)
-                            if (!pw.isValidPosition(w.first, w.second, 0.35)) ++inObst;
-                        { std::ofstream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if (lf) lf << "{\"hypothesisId\":\"H1\",\"location\":\"customer_behavior.cpp:mission_checkout_exit_path_set\",\"message\":\"Checkout/exit path waypoints obstacle check\",\"data\":{\"customerId\":" << c.getId() << ",\"pathSize\":" << waypoints.size() << ",\"waypointsInObstacle\":" << inObst << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-                    }
-                    // #endregion
                     int nextEdge = Navigator::findNextEdgeToType(currentNode,
                                                                  state == HeadingToCheckout
                                                                      ? Node::NodeType::Register

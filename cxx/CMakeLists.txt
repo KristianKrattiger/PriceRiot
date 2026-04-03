@@ -151,3 +151,76 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 target_compile_definitions(simulator PRIVATE YAML_CPP_STATIC_DEFINE)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Python extension module: simulation
+# Built without SFML/ImGui (headless analytics binding only).
+# Configure with the Python you intend to use at runtime, e.g.:
+#   cmake ../cxx -DPython_EXECUTABLE="C:/Python311/python.exe"
+# ──────────────────────────────────────────────────────────────────────────────
+find_package(Python COMPONENTS Interpreter Development.Module QUIET)
+
+if(Python_FOUND)
+    FetchContent_Declare(
+            pybind11
+            GIT_REPOSITORY https://github.com/pybind/pybind11.git
+            GIT_TAG        v2.12.0
+    )
+    FetchContent_MakeAvailable(pybind11)
+
+    # navmesh_visualizer.cpp uses full SFML graphics — exclude from the headless module.
+    set(HEADLESS_SOURCES ${COMMON_SOURCES})
+    list(REMOVE_ITEM HEADLESS_SOURCES engine/navmesh_visualizer.cpp)
+
+    set(BINDING_SOURCES
+            bindings/priceriot_bindings.cpp
+            engine/simulator.cpp
+            ${HEADLESS_SOURCES}
+    )
+
+    if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        list(APPEND BINDING_SOURCES tools/mingw_setjmp_fix.c)
+    endif()
+
+    pybind11_add_module(simulation ${BINDING_SOURCES})
+
+    target_include_directories(simulation PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/agents
+            ${CMAKE_CURRENT_SOURCE_DIR}/engine
+            ${CMAKE_CURRENT_SOURCE_DIR}/environment
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools
+            ${CMAKE_CURRENT_SOURCE_DIR}/bindings
+            # SFML headers needed for sf::Vector2f used in store_layout.h;
+            # the module does not call SFML at runtime.
+            $<TARGET_PROPERTY:sfml-system,INTERFACE_INCLUDE_DIRECTORIES>
+    )
+
+    target_link_libraries(simulation PRIVATE yaml-cpp)
+    target_compile_definitions(simulation PRIVATE YAML_CPP_STATIC_DEFINE)
+
+    if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        if(MINGWEX_LIB)
+            target_link_libraries(simulation PRIVATE ${MINGWEX_LIB})
+        else()
+            target_link_directories(simulation PRIVATE ${MINGW_LIB_DIR})
+            target_link_libraries(simulation PRIVATE mingwex)
+        endif()
+        target_link_options(simulation PRIVATE "-lmingwex")
+
+        get_filename_component(MINGW_BIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
+        foreach(dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+            if(EXISTS "${MINGW_BIN_DIR}/${dll}")
+                add_custom_command(TARGET simulation POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${MINGW_BIN_DIR}/${dll}"
+                        "$<TARGET_FILE_DIR:simulation>/${dll}"
+                )
+            endif()
+        endforeach()
+    endif()
+
+    message(STATUS "Python ${Python_VERSION} found — 'simulation' module will be built")
+else()
+    message(WARNING "Python Development headers not found — skipping 'simulation' module. "
+                    "Pass -DPython_EXECUTABLE=<path> to select a specific interpreter.")
+endif()

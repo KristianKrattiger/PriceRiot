@@ -38,8 +38,9 @@ CustomerVisit::CustomerVisit(std::shared_ptr<Customer> c, Basket b, float missio
 
 bool CustomerVisit::update(float dt, const StoreGraph &store,
                            CheckoutQueueManager *queueManager,
-                           CollisionManager *collisionManager) {
-    bool alive = cust->update(dt, store, basket, queueManager, collisionManager);
+                           CollisionManager *collisionManager,
+                           std::default_random_engine *rng) {
+    bool alive = cust->update(dt, store, basket, queueManager, collisionManager, rng);
     // Legacy flag: set if basket was already cleared externally.
     if (basket.getSize() == 0 && cust->getTotalSpent() > 0)
         hasPaid = true;
@@ -90,11 +91,13 @@ void Simulator::loadStore() {
         cellVisitCounts_[static_cast<size_t>(e)].assign(edge.cells.size(), 0);
     }
 
-    // Spawn initial workers: simple fixed pool near stockroom/register nodes.
+    respawnWorkers();
+}
+
+void Simulator::respawnWorkers() {
     workers_.clear();
     int nextWorkerId = 1;
 
-    // Helper lambdas to find representative nodes.
     auto findFirstNodeOfType = [this](Node::NodeType type) -> int {
         for (int i = 0; i < store_.numNodes(); ++i) {
             if (store_.nodeAt(i).getNodeType() == type)
@@ -105,29 +108,34 @@ void Simulator::loadStore() {
 
     const int stockroomNodeIdx = findFirstNodeOfType(Node::NodeType::Stockroom);
     const int registerNodeIdx  = findFirstNodeOfType(Node::NodeType::Register);
+    // Fallback spawn point: first Entrance node, or node 0 if none exists.
+    const int fallbackNodeIdx  = [&]() -> int {
+        int e = findFirstNodeOfType(Node::NodeType::Entrance);
+        return e >= 0 ? e : (store_.numNodes() > 0 ? 0 : -1);
+    }();
 
-    // Spawn stockers
+    auto spawnPos = [&](int preferredIdx) -> std::pair<double, double> {
+        int idx = preferredIdx >= 0 ? preferredIdx : fallbackNodeIdx;
+        if (idx < 0) return {0.0, 0.0};
+        const Node &n = store_.nodeAt(idx);
+        return {n.getX(), n.getZ()};
+    };
+
     for (int i = 0; i < numStockers_; ++i) {
         auto w = std::make_unique<Worker>(nextWorkerId++, true, false);
-        if (stockroomNodeIdx >= 0) {
-            const Node &n = store_.nodeAt(stockroomNodeIdx);
-            w->setPosition(n.getX(), n.getZ());
-        }
+        auto [spx, spz] = spawnPos(stockroomNodeIdx);
+        w->setPosition(spx, spz);
         w->setSpeed(0.9);
         workers_.push_back(std::move(w));
     }
 
-    // Spawn cashiers
     for (int i = 0; i < numCashiers_; ++i) {
         auto w = std::make_unique<Worker>(nextWorkerId++, false, true);
-        if (registerNodeIdx >= 0) {
-            const Node &n = store_.nodeAt(registerNodeIdx);
-            w->setPosition(n.getX(), n.getZ());
-        }
+        auto [spx, spz] = spawnPos(registerNodeIdx);
+        w->setPosition(spx, spz);
         w->setSpeed(0.9);
         workers_.push_back(std::move(w));
     }
-
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -167,6 +175,8 @@ void Simulator::reset() {
     elapsedTime_       = 0.0f;
     nextTransactionId_ = 1;
     taskScanTimer_     = 0.0f;
+    moodUpdateTimer_   = 0.0f;
+    workerMoodSamples_.clear();
 
     queueSampleTimes_.clear();
     queueLengthsHistory_.clear();
@@ -331,7 +341,7 @@ void Simulator::updateAgents(float dt) {
             continue;
 
         // ── Behavior tick (avoidance is blended inside behavior when collision manager is set) ─
-        ag->update(dt, store_, &queueManager_, cmPtr);
+        ag->update(dt, store_, &queueManager_, cmPtr, &rng_);
 
         // ── Handle: PickProduct ─────────────────────────────────────────────
         if (ag->cust->getLastDecisionType() ==
@@ -427,11 +437,22 @@ void Simulator::updateAgents(float dt) {
 }
 
 void Simulator::updateWorkers(float dt) {
+    // Periodic worker mood/efficiency update driven by store conditions.
+    moodUpdateTimer_ += dt;
+    if (moodUpdateTimer_ >= kMoodUpdateInterval) {
+        moodUpdateTimer_ = 0.0f;
+        updateWorkerMoods();
+    }
+
+    // Pass collision manager so workers can steer around customers.
+    bool hasPhysics = store_.hasPhysicsWorld();
+    CollisionManager *cmPtr = hasPhysics ? &collisionManager_ : nullptr;
+
     for (auto &w : workers_) {
         if (!w)
             continue;
 
-        w->update(dt, store_, &queueManager_, nullptr);
+        w->update(dt, store_, &queueManager_, cmPtr);
 
         const Worker::CompletedTask ev = w->popCompletedTask();
         if (!ev.valid)
@@ -447,6 +468,46 @@ void Simulator::updateWorkers(float dt) {
         }
         // ProcessRegister / AssistCustomer: no direct inventory mutation needed;
         // the queue drains naturally as customers complete checkout.
+    }
+}
+
+void Simulator::updateWorkerMoods() {
+    if (workers_.empty()) return;
+
+    // ── Signal 1: crowd pressure — more concurrent customers = more strain ────
+    // Normalise against a reference of 30 concurrent agents.
+    const double crowdFraction = std::min(1.0,
+        static_cast<double>(agents_.size()) / 30.0);
+
+    // ── Signal 2: task backlog per worker ────────────────────────────────────
+    // >4 pending tasks per worker means workers are falling behind.
+    const int    pendingTasks = taskManager_.pendingTaskCount();
+    const int    workerCount  = std::max(1, static_cast<int>(workers_.size()));
+    const double backlogFrac  = std::min(1.0,
+        static_cast<double>(pendingTasks) / static_cast<double>(workerCount * 4));
+
+    // Target efficiency: starts at a 0.85 baseline, reduced by crowd/backlog.
+    // Range roughly [0.5, 1.0] under normal operating conditions.
+    // Workers are never penalised below 0.5 to keep the sim realistic.
+    const double targetEfficiency = 0.85
+        - crowdFraction * 0.20
+        - backlogFrac   * 0.15;
+
+    // Drift each worker's efficiency gently toward the target.
+    // Rate 0.03 per 10-second interval → ~3-4 min to fully converge.
+    const double driftRate = 0.03;
+    for (auto &w : workers_) {
+        if (!w) continue;
+        const double current = w->getTaskEfficiency();
+        const double next    = current + driftRate * (targetEfficiency - current);
+        w->setTaskEfficiency(std::clamp(next, 0.5, 1.2));
+
+        // Record efficiency sample for time-series analytics.
+        workerMoodSamples_.push_back({
+            elapsedTime_,
+            w->getId(),
+            w->getTaskEfficiency()
+        });
     }
 }
 
@@ -518,7 +579,6 @@ std::vector<WorkerSnapshot> Simulator::getWorkerSnapshots() const {
         s.posZ           = w.getPosZ();
         s.canStock       = w.canStock();
         s.canServe       = w.canServe();
-        s.happiness      = w.getHappiness();
         s.taskEfficiency = w.getTaskEfficiency();
         if (const Task *t = w.currentTask()) {
             s.hasTask      = true;

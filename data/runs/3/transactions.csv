@@ -1,0 +1,3 @@
+transaction_id,customer_id,timestamp,satisfaction,total_spent,item_id,item_name,quantity,price_per_unit,item_total
+1,1,00:08:24,6,54.980000000000004,12,Campfire Chili,1,19.99,19.99
+1,1,00:08:24,6,54.980000000000004,19,Saddle Oil,1,34.99,34.99

@@ -1,0 +1,2 @@
+id,age,gender,annual_income,family_size,total_spent,average_spend,loyalty_rating,num_purchases,num_returns,is_churn,basket_size_multiplier,price_sensitivity,impulsivity
+1,40,Female,25.03943616860135,1,54.980000000000004,54.980000000000004,55.00000000000001,1,0,False,1.0,0.5,0.35

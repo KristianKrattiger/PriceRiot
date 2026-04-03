@@ -35,6 +35,11 @@ class TaskManager {
 
     void releaseTask(TaskId id);
 
+    /** Number of tasks currently waiting to be assigned to a worker. */
+    [[nodiscard]] int pendingTaskCount() const noexcept {
+        return static_cast<int>(pending_.size());
+    }
+
   private:
     TaskId nextId_{1};
 

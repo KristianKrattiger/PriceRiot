@@ -34,7 +34,7 @@ static inline std::string or_empty(const YAML::Node &n, const char *key) {
 }
 
 namespace {
-constexpr bool kAgentLogEnabled = true;
+constexpr bool kAgentLogEnabled = false;
 struct NullLogStream {
     NullLogStream(const char *, std::ios_base::openmode) {}
     explicit operator bool() const { return false; }
@@ -340,13 +340,49 @@ void StoreGraph::loadFromYaml(const std::string &path) {
     std::string productsFile = "store_products.yaml";
     if (auto pf = root["products_file"]; pf && pf.IsScalar())
         productsFile = pf.as<std::string>();
-    std::filesystem::path productsPath = baseDir / productsFile;
+
+    // Resolve products file path: try relative to the store YAML first, then
+    // walk up to the project root (contains .git or CMakeLists.txt) as a fallback.
+    auto resolveProductsPath = [&](const std::string &relFile) -> std::filesystem::path {
+        namespace fs = std::filesystem;
+        const fs::path direct = baseDir / relFile;
+        if (fs::exists(direct)) return direct;
+
+        // Walk upward from baseDir to find the project root.
+        fs::path dir = baseDir;
+        while (!dir.empty()) {
+            if (fs::exists(dir / ".git") || fs::exists(dir / "CMakeLists.txt")) {
+                const fs::path candidate = dir / relFile;
+                if (fs::exists(candidate)) return candidate;
+                break;
+            }
+            auto parent = dir.parent_path();
+            if (parent == dir) break;
+            dir = parent;
+        }
+        return direct; // return the direct path even if missing; caller checks existence
+    };
+
+    std::filesystem::path productsPath = resolveProductsPath(productsFile);
     std::unordered_map<std::string, int> totals_by_sku;
+
+    auto isCsv = [](const std::filesystem::path &p) {
+        std::string ext = p.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c){ return std::tolower(c); });
+        return ext == ".csv";
+    };
+
     if (std::filesystem::exists(productsPath)) {
-        YAML::Node productsRoot = YAML::LoadFile(productsPath.string());
-        totals_by_sku = load_products_from_yaml(productsRoot, this->catalog);
+        if (isCsv(productsPath)) {
+            totals_by_sku = load_products_from_csv(productsPath.string(), this->catalog);
+        } else {
+            YAML::Node productsRoot = YAML::LoadFile(productsPath.string());
+            totals_by_sku = load_products_from_yaml(productsRoot, this->catalog);
+        }
     } else {
-        this->catalog.addProduct(1, "Placeholder", 0.0, "misc", 0.0);
+        std::cerr << "[Products] products_file not found: " << productsPath
+                  << " — catalog will be empty.\n";
     }
     std::unordered_map<std::uint32_t, int> onShelfQuantitySum;
 
@@ -415,6 +451,50 @@ void StoreGraph::loadFromYaml(const std::string &path) {
         }
     }
     compute_and_load_backstock(root, this->catalog, totals_by_sku, onShelfQuantitySum, backroom);
+
+    // ── Operating schedule ────────────────────────────────────────────────────
+    // Reset to all-closed, then populate from YAML.
+    operatingSchedule.open_days.fill(false);
+    operatingSchedule.day_windows.fill(DayWindow{9, 19});
+
+    // days_of_operation: [Mon, Tue, Wed, Thu, Fri, Sat]
+    if (auto dop = root["days_of_operation"]; dop && dop.IsSequence()) {
+        for (const auto &d : dop) {
+            int idx = OperatingSchedule::day_index(d.as<std::string>(""));
+            if (idx >= 0)
+                operatingSchedule.open_days[static_cast<size_t>(idx)] = true;
+            else
+                std::cerr << "[Schedule] Unknown day '" << d.as<std::string>("") << "' — skipped.\n";
+        }
+    } else {
+        // No days_of_operation: warn and default to Mon-Sat open.
+        std::cerr << "[Schedule] 'days_of_operation' not found in store YAML — defaulting to Mon-Sat.\n";
+        for (int i = 0; i < 6; ++i) operatingSchedule.open_days[static_cast<size_t>(i)] = true;
+    }
+
+    // hours_of_operation: { Mon: { open: 9, close: 19 }, ... }
+    if (auto hop = root["hours_of_operation"]; hop && hop.IsMap()) {
+        for (auto it = hop.begin(); it != hop.end(); ++it) {
+            const std::string dayName = it->first.as<std::string>("");
+            int idx = OperatingSchedule::day_index(dayName);
+            if (idx < 0) {
+                std::cerr << "[Schedule] Unknown day '" << dayName << "' in hours_of_operation — skipped.\n";
+                continue;
+            }
+            const auto &win = it->second;
+            const int open_h  = win["open"]  ? win["open"].as<int>()  : 9;
+            const int close_h = win["close"] ? win["close"].as<int>() : 19;
+            if (close_h <= open_h) {
+                throw std::runtime_error(
+                    std::string("[Schedule] Invalid hours for ") + dayName +
+                    ": close (" + std::to_string(close_h) + ") must be > open (" +
+                    std::to_string(open_h) + ")");
+            }
+            operatingSchedule.day_windows[static_cast<size_t>(idx)] = DayWindow{open_h, close_h};
+        }
+    } else {
+        std::cerr << "[Schedule] 'hours_of_operation' not found in store YAML — using default 09:00-19:00.\n";
+    }
 }
 
 // Queries/Prints (Omitted for brevity, unchanged)
