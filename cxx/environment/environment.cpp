@@ -34,14 +34,6 @@ static inline std::string or_empty(const YAML::Node &n, const char *key) {
 }
 
 namespace {
-constexpr bool kAgentLogEnabled = false;
-struct NullLogStream {
-    NullLogStream(const char *, std::ios_base::openmode) {}
-    explicit operator bool() const { return false; }
-    template <typename T> NullLogStream &operator<<(const T &) { return *this; }
-};
-using AgentLogStream = std::conditional_t<kAgentLogEnabled, std::ofstream, NullLogStream>;
-
 static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
                                                priceriot::Catalog &catalog,
                                                priceriot::EdgeCell &cell,
@@ -50,20 +42,9 @@ static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
                                                bool skipDefaultPlanogram) {
     using namespace priceriot;
     ShelfSide left{}, right{};
-    // #region agent log
-    static bool firstLog = true;
-    if (firstLog) {
-        AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
-        if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"environment.cpp:attach_inventory\",\"message\":\"Planogram loading started\",\"data\":{\"hasRoot\":true},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-        firstLog = false;
-    }
-    // #endregion
     if (auto pog = planRoot["planogram"]) {
         if (auto edgesY = pog["edges"]) {
             if (auto edgeY = edgesY[std::to_string(edgeId)]) {
-                // #region agent log
-                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"environment.cpp:planogram_found\",\"message\":\"Found planogram for edge\",\"data\":{\"edgeId\":" << edgeId << ",\"cellIndex\":" << cellIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-                // #endregion
                 if (auto cellsY = edgeY["cells"]) {
                     if (cellIndex >= 0 && cellIndex < static_cast<int>(cellsY.size())) {
                         const auto &cellY = cellsY[cellIndex];
@@ -85,9 +66,6 @@ static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
                 cell.set_right_inventory(right);
                 return;
             } else {
-                // #region agent log
-                { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"C\",\"location\":\"environment.cpp:planogram_not_found\",\"message\":\"No planogram for edge - using fallback\",\"data\":{\"edgeId\":" << edgeId << ",\"cellIndex\":" << cellIndex << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-                // #endregion
             }
         }
     }
@@ -238,13 +216,6 @@ void StoreGraph::loadFromYaml(const std::string &path) {
     edgeIdToIndex.clear();
     catalog = priceriot::Products();
     
-    // #region agent log
-    { 
-        std::filesystem::path absPath = std::filesystem::absolute(path);
-        AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); 
-        if(lf) lf << "{\"location\":\"environment.cpp:loadFromYaml\",\"message\":\"Loading YAML file\",\"data\":{\"path\":\"" << path << "\",\"absolutePath\":\"" << absPath.string() << "\"},\"timestamp\":0}\n"; 
-    }
-    // #endregion
 
     YAML::Node root;
     try {
@@ -299,18 +270,12 @@ void StoreGraph::loadFromYaml(const std::string &path) {
         edges.reserve(edgesY.size());
         std::unordered_set<int> seenEdgeIds;
         
-        // #region agent log
-        { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"location\":\"environment.cpp:loadEdges\",\"message\":\"Loading edges\",\"data\":{\"edgesYSize\":" << edgesY.size() << "},\"timestamp\":0}\n"; }
-        // #endregion
 
         for (const auto &e : edgesY) {
             const int id = e["id"].as<int>();
             const int fromId = e["from"].as<int>();
             const int toId = e["to"].as<int>();
             
-            // #region agent log
-            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"location\":\"environment.cpp:loadEdge\",\"message\":\"Loading edge\",\"data\":{\"id\":" << id << ",\"from\":" << fromId << ",\"to\":" << toId << "},\"timestamp\":0}\n"; }
-            // #endregion
             
             // ... (rest of edge loading same as before)
             if (!seenEdgeIds.insert(id).second)
@@ -421,49 +386,6 @@ void StoreGraph::loadFromYaml(const std::string &path) {
             attach_inventory_to_cell_from_yaml(root, this->catalog, cell, onShelfQuantitySum,
                                                E.getEdgeId(), c, skipDefaultPlanogram);
 
-            // #region agent log
-            if ((E.getShelfLeft() > 0.0 || E.getShelfRight() > 0.0) && c == 0) {
-                int leftBays = cell.get_left().bay_count;
-                int rightBays = cell.get_right().bay_count;
-                int leftQty = 0;
-                int rightQty = 0;
-                for (std::uint8_t b = 0; b < cell.get_left().bay_count; ++b) {
-                    const auto &bay = cell.get_left().bays[b];
-                    for (std::uint8_t f = 0; f < bay.face_count; ++f) {
-                        const auto &face = bay.faces[f];
-                        for (std::uint8_t sl = 0; sl < face.slot_count; ++sl) {
-                            leftQty += face.slots[sl].qty_on_face;
-                        }
-                    }
-                }
-                for (std::uint8_t b = 0; b < cell.get_right().bay_count; ++b) {
-                    const auto &bay = cell.get_right().bays[b];
-                    for (std::uint8_t f = 0; f < bay.face_count; ++f) {
-                        const auto &face = bay.faces[f];
-                        for (std::uint8_t sl = 0; sl < face.slot_count; ++sl) {
-                            rightQty += face.slots[sl].qty_on_face;
-                        }
-                    }
-                }
-                AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app);
-                if (lf) {
-                    lf << "{\"hypothesisId\":\"SHELF\",\"location\":\"environment.cpp:edge_inventory\","
-                          "\"message\":\"Edge inventory summary (first cell)\","
-                          "\"data\":{\"edgeId\":" << E.getEdgeId()
-                       << ",\"cellIndex\":" << c
-                       << ",\"cellCount\":" << nCells
-                       << ",\"leftBays\":" << leftBays
-                       << ",\"rightBays\":" << rightBays
-                       << ",\"leftQty\":" << leftQty
-                       << ",\"rightQty\":" << rightQty
-                       << "},\"timestamp\":"
-                       << std::chrono::duration_cast<std::chrono::milliseconds>(
-                              std::chrono::system_clock::now().time_since_epoch())
-                              .count()
-                       << "}\n";
-                }
-            }
-            // #endregion
 
             E.cells.push_back(std::move(cell));
         }

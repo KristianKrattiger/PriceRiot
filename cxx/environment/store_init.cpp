@@ -2,7 +2,7 @@
 #include "store_init.h"
 #include "shelf.h"
 #include "store_inventory.h"
-#include <../cmake-build-debug/_deps/yaml-cpp-src/include/yaml-cpp/yaml.h>
+#include <yaml-cpp/yaml.h>
 #include <algorithm>
 #include <cctype>
 #include <fstream>

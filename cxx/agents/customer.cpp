@@ -15,16 +15,6 @@
 
 namespace priceriot {
 
-namespace {
-constexpr bool kAgentLogEnabled = false;
-struct NullLogStream {
-    NullLogStream(const char *, std::ios_base::openmode) {}
-    explicit operator bool() const { return false; }
-    template <typename T> NullLogStream &operator<<(const T &) { return *this; }
-};
-using AgentLogStream = std::conditional_t<kAgentLogEnabled, std::ofstream, NullLogStream>;
-}
-
 // Default ctor
 Customer::Customer()
     : Agent(0),
@@ -124,9 +114,6 @@ bool Customer::update(const float dt, const StoreGraph &store, const Basket &bas
             break;
 
         case Decision::Despawn:
-            // #region agent log
-            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer.cpp:Despawn_handled\",\"message\":\"Despawn decision processed\",\"data\":{\"customerId\":" << getId() << ",\"prevEdgeIdx\":" << getCurrentEdgeIndex() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
-            // #endregion
             setCurrentEdgeIndex(-1);
             return false;
     }

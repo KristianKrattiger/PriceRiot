@@ -36,9 +36,6 @@ from __future__ import annotations
 import math
 import os
 import sys
-import json
-import time
-import uuid
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, List, Optional
@@ -68,24 +65,6 @@ _PERIOD_BOUNDARIES = [
     ("evening", 14.0,  17.0),   # 14:00 → 17:00
     ("close",   17.0,  None),   # 17:00 → close_hour
 ]
-
-_DEBUG_LOG_PATH = os.path.join(os.getcwd(), "debug-570d5e.log")
-
-
-def _write_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    payload = {
-        "sessionId": "570d5e",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-        "id": f"log_{uuid.uuid4().hex}",
-    }
-    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(payload, separators=(",", ":")) + "\n")
-
 
 def _intraday_pdf(hour: float) -> float:
     """Unnormalised two-peak Gaussian PDF at decimal hour *hour*."""
@@ -388,21 +367,6 @@ def run_temporal_simulation(
 
     scheduler = TemporalScheduler(config)
     sim_days = scheduler.get_sim_days()
-    # #region agent log
-    _write_debug_log(
-        run_id="pre-fix",
-        hypothesis_id="H10",
-        location="temporal.py:run_temporal_simulation:init",
-        message="Temporal run initialized",
-        data={
-            "storeYaml": config.store_yaml,
-            "simDays": len(sim_days),
-            "dt": config.dt,
-            "baseSpawnInterval": config.base_spawn_interval,
-            "seed": config.seed,
-        },
-    )
-    # #endregion
 
     if not sim_days:
         raise ValueError("No active simulation days in the requested range.")
@@ -439,20 +403,6 @@ def run_temporal_simulation(
     accumulated_time: float      = 0.0
 
     for sd in sim_days:
-        # #region agent log
-        _write_debug_log(
-            run_id="pre-fix",
-            hypothesis_id="H11",
-            location="temporal.py:run_temporal_simulation:day_start",
-            message="Starting simulation day",
-            data={
-                "date": sd.date.isoformat(),
-                "openHour": sd.open_hour,
-                "closeHour": sd.close_hour,
-                "periodCount": len(sd.spawn_periods),
-            },
-        )
-        # #endregion
         sim.reset()
         sim.set_seed(config.seed ^ hash(sd.date) & 0xFFFFFFFF)
 
@@ -466,22 +416,6 @@ def run_temporal_simulation(
         for period in sd.spawn_periods:
             sim.set_spawn_interval(period.spawn_interval)
             period_duration = period.end_offset - period.start_offset
-            # #region agent log
-            _write_debug_log(
-                run_id="pre-fix",
-                hypothesis_id="H12",
-                location="temporal.py:run_temporal_simulation:period_before_run",
-                message="About to call sim.run for period",
-                data={
-                    "date": sd.date.isoformat(),
-                    "periodName": period.name,
-                    "periodDuration": period_duration,
-                    "spawnInterval": period.spawn_interval,
-                    "startOffset": period.start_offset,
-                    "endOffset": period.end_offset,
-                },
-            )
-            # #endregion
             # Chunk long runs so we can observe progress and avoid one giant blocking call.
             # This also helps distinguish "slow but progressing" from a true deadlock.
             chunk_seconds = 120.0
@@ -490,55 +424,9 @@ def run_temporal_simulation(
             while remaining > 1e-9:
                 chunk_idx += 1
                 this_chunk = min(chunk_seconds, remaining)
-                # #region agent log
-                _write_debug_log(
-                    run_id="post-fix",
-                    hypothesis_id="H15",
-                    location="temporal.py:run_temporal_simulation:chunk_before_run",
-                    message="About to run simulation chunk",
-                    data={
-                        "date": sd.date.isoformat(),
-                        "periodName": period.name,
-                        "chunkIndex": chunk_idx,
-                        "chunkSeconds": this_chunk,
-                        "remainingBefore": remaining,
-                        "elapsedBefore": float(sim.elapsed_time),
-                    },
-                )
-                # #endregion
                 target_elapsed = float(sim.elapsed_time) + float(this_chunk)
                 sim.run(target_elapsed, config.dt)
                 remaining -= this_chunk
-                # #region agent log
-                _write_debug_log(
-                    run_id="post-fix",
-                    hypothesis_id="H15",
-                    location="temporal.py:run_temporal_simulation:chunk_after_run",
-                    message="Completed simulation chunk",
-                    data={
-                        "date": sd.date.isoformat(),
-                        "periodName": period.name,
-                        "chunkIndex": chunk_idx,
-                        "remainingAfter": remaining,
-                        "elapsedAfter": float(sim.elapsed_time),
-                        "transactionsSoFar": sim.transaction_count(),
-                    },
-                )
-                # #endregion
-            # #region agent log
-            _write_debug_log(
-                run_id="post-fix",
-                hypothesis_id="H12",
-                location="temporal.py:run_temporal_simulation:period_after_run",
-                message="Completed full period",
-                data={
-                    "date": sd.date.isoformat(),
-                    "periodName": period.name,
-                    "periodDuration": period_duration,
-                    "transactionsSoFar": sim.transaction_count(),
-                },
-            )
-            # #endregion
 
         # ── Capture per-day sim metrics before reset ───────────────────────
         # Cell heatmap (accumulate by adding counts)

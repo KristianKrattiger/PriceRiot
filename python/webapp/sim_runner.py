@@ -12,11 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
 import logging
 import os
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import List, Optional, Tuple
@@ -31,26 +29,6 @@ from .sim_models import (
 from .sim_storage import sim_job_store
 
 logger = logging.getLogger("priceriot.sim_runner")
-_DEBUG_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "debug-570d5e.log")
-
-
-def _write_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    # #region agent log
-    payload = {
-        "sessionId": "570d5e",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-        "id": f"log_{uuid.uuid4().hex}",
-    }
-    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(payload, separators=(",", ":")) + "\n")
-    # #endregion
-
-
 def _resolve_pos_dataset(root: str, filename: Optional[str]) -> Optional[str]:
     """Same search order as app.get_pos_params."""
     if not filename:
@@ -394,16 +372,9 @@ async def _run_simulation_job_inner(sim_id: str) -> None:
     # 300 ticks/s is a conservative throughput floor for large/complex layouts.
     # Cowboy_Outpost with default spawn ran at ~442 ticks/s and hit the 814s cap.
     dynamic_timeout_s = max(600, min(21600, int(approx_ticks / 300 * _agent_load_factor) + 600))
-    _write_debug_log(
-        run_id="post-fix",
-        hypothesis_id="H14",
-        location="sim_runner.py:_run_simulation_job_inner:timeout_budget",
-        message="Calculated dynamic timeout budget",
-        data={
-            "simId": sim_id,
-            "approxStepTicks": approx_ticks,
-            "timeoutSeconds": dynamic_timeout_s,
-        },
+    logger.info(
+        "sim_runner: sim_id=%s approx_ticks=%d timeout_budget=%ds",
+        sim_id, approx_ticks, dynamic_timeout_s,
     )
 
     async def run_one(run_index: int) -> PerRunSummary:
@@ -432,18 +403,10 @@ async def _run_simulation_job_inner(sim_id: str) -> None:
                     timeout=float(dynamic_timeout_s),
                 )
             except asyncio.TimeoutError:
-                _write_debug_log(
-                    run_id="post-fix",
-                    hypothesis_id="H13",
-                    location="sim_runner.py:run_one:timeout",
-                    message="run_one timeout reached",
-                    data={
-                        "runIndex": run_index,
-                        "timeoutSeconds": float(dynamic_timeout_s),
-                        "storeYamlAbs": store_yaml_abs,
-                        "startDate": start_date.isoformat(),
-                        "endDate": end_date.isoformat(),
-                    },
+                logger.warning(
+                    "sim_runner: run_index=%d timed out after %ss (store=%s, %s..%s)",
+                    run_index, dynamic_timeout_s, store_yaml_abs,
+                    start_date.isoformat(), end_date.isoformat(),
                 )
                 raise RuntimeError(
                     f"Run {run_index} timed out after {dynamic_timeout_s} s "
