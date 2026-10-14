@@ -453,8 +453,11 @@ watch(() => store.drilldownRunIndex, () => { drillTab.value = "summary"; });
 const detail = computed(() => store.activeRunDetail || {});
 const kpis   = computed(() => detail.value.kpis || {});
 
+// KPI view: aisle-only edges. WebGL overlays use the full list from detail.value.traffic_edges.
 const sortedTrafficEdges = computed(() =>
-  [...(detail.value.traffic_edges || [])].sort((a, b) => b.total_visits - a.total_visits)
+  [...(detail.value.traffic_edges || [])]
+    .filter((e) => !e.edge_type || e.edge_type === "aisle")
+    .sort((a, b) => b.total_visits - a.total_visits)
 );
 
 const sim = computed(() => store.activeSimulation);

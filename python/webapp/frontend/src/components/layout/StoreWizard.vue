@@ -23,13 +23,14 @@
               ? 'text-ink-ghost'
               : 'text-ink-ghost/40'"
         >
-          {{ ['Shape & Size', 'Schedule', 'Data Files'][s - 1] }}
+          {{ ['Template & Size', 'Schedule', 'Data Files'][s - 1] }}
         </div>
       </div>
 
-      <!-- ── Step 1: Shape & Size ─────────────────────────────────────────── -->
+      <!-- ── Step 1: Template & Size ──────────────────────────────────────── -->
       <div v-if="step === 1" class="px-6 py-5 space-y-5">
 
+        <!-- Store name -->
         <div class="space-y-1.5">
           <label class="block text-[11px] uppercase tracking-label text-ink-ghost">Store name</label>
           <input
@@ -41,34 +42,52 @@
           />
         </div>
 
+        <!-- Template picker -->
         <div class="space-y-2">
-          <label class="block text-[11px] uppercase tracking-label text-ink-ghost">Floor plan shape</label>
+          <label class="block text-[11px] uppercase tracking-label text-ink-ghost">Starting template</label>
           <div class="grid grid-cols-2 gap-2">
-            <!-- Rectangle — only enabled shape in Phase 1 -->
             <button
-              @click="form.shape = 'rectangle'"
+              v-for="tpl in TEMPLATES"
+              :key="tpl.id"
+              @click="pickTemplate(tpl)"
               class="px-3 py-3 text-[11px] font-mono border transition-colors text-left"
-              :class="form.shape === 'rectangle'
+              :class="form.templateId === tpl.id
                 ? 'border-mustard bg-mustard/10 text-mustard'
                 : 'border-rim text-ink-ghost hover:text-ink hover:bg-surface-hover'"
             >
-              <div class="font-medium">Rectangle</div>
-              <div class="text-[10px] opacity-70">Standard rectangular footprint</div>
-            </button>
-
-            <!-- Phase 2+ shapes — disabled -->
-            <button
-              v-for="shape in ['L-shape', 'T-shape', 'U-shape', 'Custom polygon']"
-              :key="shape"
-              disabled
-              class="px-3 py-3 text-[11px] font-mono border border-rim text-ink-ghost/30 text-left cursor-not-allowed relative"
-            >
-              <div class="font-medium">{{ shape }}</div>
-              <div class="text-[10px]">Phase 2</div>
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-base leading-none">{{ tpl.icon }}</span>
+                <span class="font-medium">{{ tpl.label }}</span>
+              </div>
+              <div class="text-[10px] opacity-70 leading-snug">{{ tpl.description }}</div>
+              <div class="text-[10px] mt-1 opacity-50">{{ tpl.defaultW }}×{{ tpl.defaultD }} ft</div>
             </button>
           </div>
         </div>
 
+        <!-- Aisle layout (hidden for blank template) -->
+        <div v-if="form.templateId !== 'blank'" class="space-y-2">
+          <label class="block text-[11px] uppercase tracking-label text-ink-ghost">Aisle layout</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button
+              v-for="al in AISLE_LAYOUTS"
+              :key="al.id"
+              @click="form.aisleLayout = al.id"
+              class="px-3 py-3 text-[11px] font-mono border transition-colors text-left"
+              :class="form.aisleLayout === al.id
+                ? 'border-mustard bg-mustard/10 text-mustard'
+                : 'border-rim text-ink-ghost hover:text-ink hover:bg-surface-hover'"
+            >
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-base leading-none">{{ al.icon }}</span>
+                <span class="font-medium">{{ al.label }}</span>
+              </div>
+              <div class="text-[10px] opacity-70 leading-snug">{{ al.description }}</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dimensions (pre-filled from template, user can override) -->
         <div class="grid grid-cols-2 gap-4">
           <div class="space-y-1.5">
             <label class="block text-[11px] uppercase tracking-label text-ink-ghost">Width (ft)</label>
@@ -201,6 +220,9 @@
                      hover:bg-surface-hover transition-colors shrink-0 whitespace-nowrap"
             >{{ posUploading ? "Uploading…" : "↑ Upload" }}</button>
           </div>
+          <p v-if="posPendingName && !posUploadError" class="text-[10px] font-mono text-ink-ghost">
+            Uploading {{ posPendingName }}…
+          </p>
           <p v-if="posUploadError" class="text-[10px] font-mono text-danger">{{ posUploadError }}</p>
         </div>
 
@@ -274,6 +296,7 @@
 import { ref, reactive, computed, onMounted } from "vue";
 import { uploadFile } from "../../api/client";
 import { useTemporalStore } from "../../stores/temporal";
+import { TEMPLATES, AISLE_LAYOUTS } from "../../stores/templates";
 
 const emit = defineEmits(["created", "cancel"]);
 
@@ -281,8 +304,9 @@ const temporalStore = useTemporalStore();
 
 const step           = ref(1);
 const creating       = ref(false);
-const posUploading   = ref(false);
-const posUploadError = ref("");
+const posUploading    = ref(false);
+const posUploadError  = ref("");
+const posPendingName  = ref("");
 const productUploading   = ref(false);
 const productUploadError = ref("");
 
@@ -290,9 +314,10 @@ const allDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const form = reactive({
   name:            "My Store",
-  shape:           "rectangle",
-  widthFt:         120,
-  depthFt:         80,
+  templateId:      "blank",
+  aisleLayout:     "parallel",
+  widthFt:         TEMPLATES[0].defaultW,
+  depthFt:         TEMPLATES[0].defaultD,
   daysOfOperation: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
   defaultOpen:     "09:00",
   defaultClose:    "19:00",
@@ -300,6 +325,12 @@ const form = reactive({
   posCsv:          "",
   productCsv:      "",
 });
+
+function pickTemplate(tpl) {
+  form.templateId = tpl.id;
+  form.widthFt    = tpl.defaultW;
+  form.depthFt    = tpl.defaultD;
+}
 
 const datasets = computed(() => temporalStore.datasets ?? []);
 
@@ -316,7 +347,7 @@ const sizeCategory = computed(() => {
 });
 
 const canProceed = computed(() => {
-  if (step.value === 1) return form.name.trim().length > 0 && form.widthFt >= 10 && form.depthFt >= 10;
+  if (step.value === 1) return form.name.trim().length > 0 && form.widthFt >= 10 && form.depthFt >= 10 && !!form.templateId;
   if (step.value === 2) return form.daysOfOperation.length > 0;
   return true;
 });
@@ -332,6 +363,7 @@ async function onPosCsvUpload(e) {
   if (!file) return;
   posUploading.value   = true;
   posUploadError.value = "";
+  posPendingName.value = file.name;
   try {
     const result = await uploadFile(file);
     // Refresh dataset list then select the uploaded file
@@ -340,7 +372,8 @@ async function onPosCsvUpload(e) {
   } catch (err) {
     posUploadError.value = err?.message ?? "Upload failed";
   } finally {
-    posUploading.value = false;
+    posUploading.value   = false;
+    posPendingName.value = "";
     e.target.value = "";
   }
 }
@@ -376,83 +409,25 @@ async function finish() {
         : { open: form.defaultOpen, close: form.defaultClose };
     }
 
-    // Build the layout JSON locally (mirrors layout_serializer.wizard_default_layout)
-    const layout = buildWizardLayout(form.name, form.widthFt, form.depthFt,
-                                     form.daysOfOperation, hours,
-                                     form.productCsv || null);
+    const meta = {
+      name:            form.name,
+      daysOfOperation: form.daysOfOperation,
+      hours,
+      productsFile:    form.productCsv || null,
+      posCsvName:      form.posCsv || null,
+      aisleLayout:     form.aisleLayout,
+    };
+
+    // Resolve selected template generator
+    const tpl = TEMPLATES.find((t) => t.id === form.templateId) ?? TEMPLATES[0];
+    const layout = tpl.build(form.widthFt, form.depthFt, meta);
+
     emit("created", layout, form.name);
   } finally {
     creating.value = false;
   }
 }
 
-/** Mirror of layout_serializer.wizard_default_layout — built client-side. */
-function buildWizardLayout(name, widthFt, depthFt, daysOfOperation, hours, productsFile) {
-  const cx = widthFt / 2;
-  const cy = depthFt / 2;
-  return {
-    units:        "feet",
-    productsFile: productsFile,
-    shape:        "rectangle",
-    boundary: [
-      { x: 0,       y: 0       },
-      { x: widthFt, y: 0       },
-      { x: widthFt, y: depthFt },
-      { x: 0,       y: depthFt },
-    ],
-    nodes: [
-      {
-        id: 1, type: "Entrance",
-        x: 0,       y: cy,
-        width: 10,  length: 8,
-        shelfLeft: 0, shelfRight: 0,
-        blockedFraction: 0, personalSpace: 1.0,
-        jamDensity: 3.5, dwellTime: 0, serviceRate: 0,
-        entryRate: 1.0, exitRate: 0.0,
-      },
-      {
-        id: 2, type: "Junction",
-        x: cx,      y: cy,
-        width: 6,   length: 6,
-        shelfLeft: 0, shelfRight: 0,
-        blockedFraction: 0, personalSpace: 1.0,
-        jamDensity: 3.5, dwellTime: 0, serviceRate: 0,
-        entryRate: 0.0, exitRate: 0.0,
-      },
-      {
-        id: 3, type: "Exit",
-        x: widthFt, y: cy,
-        width: 10,  length: 8,
-        shelfLeft: 0, shelfRight: 0,
-        blockedFraction: 0, personalSpace: 1.0,
-        jamDensity: 3.5, dwellTime: 0, serviceRate: 0,
-        entryRate: 0.0, exitRate: 1.0,
-      },
-    ],
-    edges: [
-      {
-        id: 1, nodeA: 1, nodeB: 2,
-        length: parseFloat(cx.toFixed(2)), width: 12,
-        shelfLeft: 0, shelfRight: 0,
-        freeSpeed: 1.2, jamDensity: 3.5, blockedFraction: 0,
-        flow: "bi", orientation: "fwd", edgeType: "wall",
-      },
-      {
-        id: 2, nodeA: 2, nodeB: 3,
-        length: parseFloat(cx.toFixed(2)), width: 12,
-        shelfLeft: 0, shelfRight: 0,
-        freeSpeed: 1.2, jamDensity: 3.5, blockedFraction: 0,
-        flow: "bi", orientation: "fwd", edgeType: "wall",
-      },
-    ],
-    shelves:        [],
-    freeObjects:    [],
-    planogram:      {},
-    checkoutQueues: [],
-    schedule: { daysOfOperation, hours },
-    _wizardNew: true,
-  };
-}
 
 onMounted(() => {
   if (!temporalStore.datasets?.length) temporalStore.fetchDatasets();

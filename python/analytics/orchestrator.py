@@ -144,9 +144,30 @@ def _compute_sku_breakdown(df) -> list:
     ]
 
 
-def _compute_traffic_edges(cell_heatmap: list) -> list:
+def _load_edge_types(store_yaml: str) -> dict:
+    """Return {edge_index: edge_type_str} from the store YAML edges list.
+
+    Falls back to an empty dict if the YAML cannot be read — the frontend
+    treats missing edge_type as 'aisle' for backward compatibility.
+    """
+    try:
+        import yaml as _yaml
+        with open(store_yaml, "r", encoding="utf-8") as fh:
+            data = _yaml.safe_load(fh)
+        edges = data.get("edges", [])
+        return {i: e.get("type", "aisle") for i, e in enumerate(edges)}
+    except Exception:
+        return {}
+
+
+def _compute_traffic_edges(cell_heatmap: list, store_yaml: str = "") -> list:
+    edge_types = _load_edge_types(store_yaml) if store_yaml else {}
     return [
-        {"edge_index": i, "total_visits": int(sum(cells))}
+        {
+            "edge_index":   i,
+            "total_visits": int(sum(cells)),
+            "edge_type":    edge_types.get(i, "aisle"),
+        }
         for i, cells in enumerate(cell_heatmap)
         if sum(cells) > 0
     ]
@@ -189,7 +210,7 @@ class SimRun:
         # Compute rich KPIs from the full result
         kpis         = _compute_run_kpis(result)
         sku_breakdown = _compute_sku_breakdown(result.transactions)
-        traffic_edges = _compute_traffic_edges(result.cell_heatmap)
+        traffic_edges = _compute_traffic_edges(result.cell_heatmap, self._config.store_yaml)
 
         # Write transactions CSV
         tx_path = os.path.join(self.run_dir, "transactions.csv")

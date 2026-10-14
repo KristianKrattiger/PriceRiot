@@ -56,6 +56,19 @@ for _path in (_BUILD, _RELEASE):
     if os.path.isdir(_path) and _path not in sys.path:
         sys.path.insert(0, _path)
 
+# Windows: MinGW-linked simulation.*.pyd loads libgcc/libstdc++/libwinpthread from the same
+# folder as the .pyd. Without MinGW on PATH (build_and_test.ps1 adds it), the loader fails
+# with "DLL load failed ... module could not be found". Register the build dir(s) explicitly.
+if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+    try:
+        os.add_dll_directory(_BUILD)
+    except (OSError, FileNotFoundError, ValueError):
+        pass
+    if os.path.isdir(_RELEASE):
+        try:
+            os.add_dll_directory(_RELEASE)
+        except (OSError, FileNotFoundError, ValueError):
+            pass
 
 try:
     import simulation  # type: ignore[import]
@@ -126,7 +139,7 @@ def run_simulation(
     spawn_interval: float = 5.0,
     mission_probability: float = 0.5,
     seed: int = 0,
-    dt: float = 1.0 / 60.0,
+    dt: float = 1.0 / 10.0,
     num_stockers: int = 2,
     num_cashiers: int = 1,
     auto_stock_tasks: bool = True,
@@ -175,7 +188,7 @@ def run_simulation_to_csv(
     spawn_interval: float = 5.0,
     mission_probability: float = 0.5,
     seed: int = 0,
-    dt: float = 1.0 / 60.0,
+    dt: float = 1.0 / 10.0,
     num_stockers: int = 2,
     num_cashiers: int = 1,
     auto_stock_tasks: bool = True,

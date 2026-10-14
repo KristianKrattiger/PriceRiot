@@ -44,13 +44,51 @@ double NavPolygon::getArea() const {
 int NavMesh::addPolygon(const NavPolygon &polygon) {
     int index = static_cast<int>(polygons.size());
     polygons.push_back(polygon);
+    // Invalidate spatial index when new polygons are added.
+    spatialIndexBuilt_ = false;
     return index;
 }
 
+void NavMesh::buildSpatialIndex() const {
+    spatialGrid_.clear();
+    for (int i = 0; i < static_cast<int>(polygons.size()); ++i) {
+        if (!polygons[i].isWalkable())
+            continue;
+        const auto &verts = polygons[i].getVertices();
+        if (verts.empty())
+            continue;
+        double minX = verts[0].x, maxX = verts[0].x;
+        double minZ = verts[0].z, maxZ = verts[0].z;
+        for (const auto &v : verts) {
+            if (v.x < minX) minX = v.x;
+            if (v.x > maxX) maxX = v.x;
+            if (v.z < minZ) minZ = v.z;
+            if (v.z > maxZ) maxZ = v.z;
+        }
+        int cxMin = static_cast<int>(std::floor(minX / kGridCellSize));
+        int czMin = static_cast<int>(std::floor(minZ / kGridCellSize));
+        int cxMax = static_cast<int>(std::floor(maxX / kGridCellSize));
+        int czMax = static_cast<int>(std::floor(maxZ / kGridCellSize));
+        for (int cx = cxMin; cx <= cxMax; ++cx) {
+            for (int cz = czMin; cz <= czMax; ++cz) {
+                spatialGrid_[cellKey(cx, cz)].push_back(i);
+            }
+        }
+    }
+    spatialIndexBuilt_ = true;
+}
+
 std::optional<int> NavMesh::findPolygonContaining(double x, double z) const {
-    for (size_t i = 0; i < polygons.size(); ++i) {
-        if (polygons[i].isWalkable() && polygons[i].containsPoint(x, z)) {
-            return static_cast<int>(i);
+    if (!spatialIndexBuilt_)
+        buildSpatialIndex();
+
+    int cx = static_cast<int>(std::floor(x / kGridCellSize));
+    int cz = static_cast<int>(std::floor(z / kGridCellSize));
+    auto it = spatialGrid_.find(cellKey(cx, cz));
+    if (it != spatialGrid_.end()) {
+        for (int idx : it->second) {
+            if (polygons[idx].isWalkable() && polygons[idx].containsPoint(x, z))
+                return idx;
         }
     }
     return std::nullopt;
@@ -59,20 +97,51 @@ std::optional<int> NavMesh::findPolygonContaining(double x, double z) const {
 std::optional<int> NavMesh::findNearestPolygon(double x, double z) const {
     if (polygons.empty())
         return std::nullopt;
+    if (!spatialIndexBuilt_)
+        buildSpatialIndex();
+
+    int cx = static_cast<int>(std::floor(x / kGridCellSize));
+    int cz = static_cast<int>(std::floor(z / kGridCellSize));
 
     int nearestIdx = -1;
     double minDistSq = std::numeric_limits<double>::max();
 
-    for (size_t i = 0; i < polygons.size(); ++i) {
-        if (!polygons[i].isWalkable())
-            continue;
+    // Search expanding rings of grid cells until we find at least one candidate.
+    for (int radius = 0; radius <= 4; ++radius) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            for (int dz = -radius; dz <= radius; ++dz) {
+                if (std::abs(dx) != radius && std::abs(dz) != radius)
+                    continue; // Only the outer ring of this radius
+                auto it = spatialGrid_.find(cellKey(cx + dx, cz + dz));
+                if (it == spatialGrid_.end())
+                    continue;
+                for (int idx : it->second) {
+                    if (!polygons[idx].isWalkable())
+                        continue;
+                    auto [cxP, czP] = polygons[idx].getCenter();
+                    double distSq = distanceSquared(x, z, cxP, czP);
+                    if (distSq < minDistSq) {
+                        minDistSq = distSq;
+                        nearestIdx = idx;
+                    }
+                }
+            }
+        }
+        if (nearestIdx >= 0)
+            break;
+    }
 
-        auto [centerX, centerZ] = polygons[i].getCenter();
-        double distSq = distanceSquared(x, z, centerX, centerZ);
-
-        if (distSq < minDistSq) {
-            minDistSq = distSq;
-            nearestIdx = static_cast<int>(i);
+    // Full linear fallback if nothing found nearby (should be rare).
+    if (nearestIdx < 0) {
+        for (int i = 0; i < static_cast<int>(polygons.size()); ++i) {
+            if (!polygons[i].isWalkable())
+                continue;
+            auto [cxP, czP] = polygons[i].getCenter();
+            double distSq = distanceSquared(x, z, cxP, czP);
+            if (distSq < minDistSq) {
+                minDistSq = distSq;
+                nearestIdx = i;
+            }
         }
     }
 

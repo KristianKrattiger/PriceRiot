@@ -253,22 +253,39 @@ void Simulator::spawnAgent(float dt) {
     auto ag = std::make_unique<CustomerVisit>(custPtr, std::move(basket),
                                               missionProbability_, rng_);
 
-    // Find the first entrance edge
+    // First edge from an Entrance node (YAML from->to), or along a bi edge toward Entrance (to node).
     int startEdgeIdx = -1;
+    bool spawnAlongEdgeForward = true;
     for (int i = 0; i < store_.numEdges(); ++i) {
         if (store_.nodeAt(store_.edgeAt(i).getFromNode()).getNodeType() ==
             Node::NodeType::Entrance) {
             startEdgeIdx = i;
+            spawnAlongEdgeForward = true;
             break;
         }
     }
     if (startEdgeIdx == -1) {
-        // No entrance found – drop this spawn silently
+        for (int i = 0; i < store_.numEdges(); ++i) {
+            const auto &ed = store_.edgeAt(i);
+            if (ed.getFlow() == Edge::Flow::bi &&
+                store_.nodeAt(ed.getToNode()).getNodeType() == Node::NodeType::Entrance) {
+                startEdgeIdx = i;
+                spawnAlongEdgeForward = false;
+                break;
+            }
+        }
+    }
+    if (startEdgeIdx == -1) {
+        // No entrance-adjacent edge — drop this spawn silently
         return;
     }
 
     ag->cust->setCurrentEdgeIndex(startEdgeIdx);
-    ag->cust->setDistOnEdge(0.0);
+    ag->cust->setEdgeTraverseForward(spawnAlongEdgeForward);
+    {
+        const double elen = store_.edgeAt(startEdgeIdx).getLength();
+        ag->cust->setDistOnEdge(spawnAlongEdgeForward ? 0.0 : elen);
+    }
     ag->cust->setSpeed(0.75);
 
     // Set world position to the entrance node
@@ -329,10 +346,6 @@ void Simulator::updateAgents(float dt) {
             }
         }
     }
-
-    // Re-register agents in case any were added this tick
-    for (auto &ag : agents_)
-        collisionManager_.registerAgent(ag->cust.get(), 0.35);
 
     bool hasPhysics = store_.hasPhysicsWorld();
     CollisionManager *cmPtr = hasPhysics ? &collisionManager_ : nullptr;

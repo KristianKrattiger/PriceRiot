@@ -53,3 +53,9 @@ data/priceriot.db
 # Temporary files
 *.tmp
 *.temp
+
+# Generated run output and local scratch
+data/runs/
+data/tmp/
+python/webapp/frontend/dist/
+debug-*.log

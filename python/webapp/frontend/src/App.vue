@@ -37,6 +37,7 @@
           <component
             :is="currentComponent"
             @submitted="onSimulationSubmitted"
+            @navigate="onNavigate"
           />
         </KeepAlive>
       </section>
@@ -70,6 +71,10 @@ const currentComponent = computed(() =>
 
 function onSimulationSubmitted() {
   activeTab.value = "results";
+}
+
+function onNavigate(tabId) {
+  activeTab.value = tabId;
 }
 
 function handleBeforeUnload() {

@@ -42,7 +42,7 @@ class TimeWindow(BaseModel):
 
 
 class SimJobConfig(BaseModel):
-    pos_dataset: str           # POS CSV filename (relative to uploads/raw dir)
+    pos_dataset: Optional[str] = None  # POS CSV filename (relative to uploads/raw dir)
     store_yaml:  str           # YAML filename resolved from pos_dataset
     preset: str                # contiguous_range | single_day_n_runs | weekday_repeat | custom_days
     date_config: DateConfig
@@ -94,3 +94,5 @@ class SimJobResult(BaseModel):
     aggregate:     Optional[Dict[str, Any]] = None
     per_runs:      List[PerRunSummary]      = Field(default_factory=list)
     error_message: Optional[str]            = None
+    # Filled when a job starts running: temporal workload estimate (debugging long/hung runs)
+    workload: Optional[Dict[str, Any]] = None

@@ -128,6 +128,45 @@ def test_spawn_intervals_vary_by_period():
         )
 
 
+def test_pos_intraday_bends_spawn_periods():
+    """POS-derived hourly weights change period spawn intervals vs pure synthetic PDF."""
+    fd, path = tempfile.mkstemp(suffix=".csv", text=True)
+    os.close(fd)
+    try:
+        # Dense transactions in hour 14 only → empirical curve peaks in "evening" band.
+        rows = ["Date,Transaction_ID"]
+        for i in range(80):
+            rows.append(f"2024-01-01 14:{i % 59:02d}:01,tx{i}")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(rows))
+
+        base = dict(
+            store_yaml=STORE,
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 1),
+            base_spawn_interval=10.0,
+            mission_probability=0.5,
+            seed=1,
+            dt=1.0,
+        )
+        syn = SimulationRangeConfig(**base)
+        pos = SimulationRangeConfig(**base, pos_csv_path=path)
+
+        ts_syn = TemporalScheduler(syn).get_sim_days()[0].spawn_periods
+        ts_pos = TemporalScheduler(pos).get_sim_days()[0].spawn_periods
+
+        is_syn = tuple(round(p.spawn_interval, 2) for p in ts_syn)
+        is_pos = tuple(round(p.spawn_interval, 2) for p in ts_pos)
+        assert is_syn != is_pos, (
+            f"Expected POS hourly curve to change intervals; syn={is_syn} pos={is_pos}"
+        )
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def test_window_override_respected():
     """daily_window_override replaces the YAML hours for every open day."""
     cfg = SimulationRangeConfig(
@@ -219,6 +258,7 @@ if __name__ == "__main__":
     tests = [
         test_scheduler_resolves_days,
         test_spawn_intervals_vary_by_period,
+        test_pos_intraday_bends_spawn_periods,
         test_window_override_respected,
         test_sequential_vs_parallel_seed_equivalence,
         test_n_runs_output_directories,

@@ -131,6 +131,15 @@ class SimJobStore:
             await self._db.commit()
         return deleted
 
+    async def delete_all_jobs(self) -> int:
+        async with self._lock:
+            async with self._db.execute("SELECT COUNT(*) FROM simulation_jobs") as cur:
+                row = await cur.fetchone()
+                count = row[0] if row else 0
+            await self._db.execute("DELETE FROM simulation_jobs")
+            await self._db.commit()
+        return count
+
     # ── Synchronous shim ───────────────────────────────────────────────────
 
     def _run_sync(self, coro):

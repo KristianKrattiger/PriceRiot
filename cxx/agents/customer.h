@@ -131,7 +131,10 @@ class Customer : public Agent {
         return behaviorState.browsing;
     }
     [[nodiscard]] int getDwellTicks() const {
-        return behaviorState.dwellTicks;
+        return static_cast<int>(behaviorState.dwellTimeSeconds * 60.0f);
+    }
+    [[nodiscard]] float getDwellTimeSeconds() const {
+        return behaviorState.dwellTimeSeconds;
     }
 
     // *****Last decision (for debugging)
@@ -274,7 +277,7 @@ class Customer : public Agent {
     struct BehaviorState {
         bool isSpawning = false;
         bool browsing = true;
-        int dwellTicks = 0;
+        float dwellTimeSeconds = 0.0f;
         int lastShopCell = -1;
         int lastPickAttemptCell = -1; // Track cell where pick was already attempted
         int targetNodeId = -1;

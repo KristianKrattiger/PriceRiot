@@ -236,11 +236,17 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 |---|---|
 | FastAPI backend | `POST /api/runs` (upload + stream), run listing/detail, CSV + KPI export, comparison engine |
 | Temporal jobs | `POST /api/simulations` (202) and job/status/results endpoints for multi-day / batch workflows (`sim_runner`, `sim_storage`) |
+| Layout test endpoint | `POST /api/layout-test` — quick single-run sim launched directly from the layout editor; result tracked in temporal job panel |
 | SQLite persistence | Runs in `data/priceriot.db`; large CSVs under `data/runs/{id}/`; survives restarts |
 | `DELETE /api/runs/{id}` | Removes run record and cleans up on-disk CSV artifacts |
 | `GET /api/runs/{id}/profile` | POS-derived ingestion summary when a POS file backed the run |
 | Vue 3 frontend | Tabs: **Run** (datasets, YAML, sim config), **Results**, **Compare**, **Layout** (canvas + YAML export) |
 | Ingestion profile | Spawn interval / basket hints from POS; `IngestionProfile.vue` and run-time `extract_params` |
+| POS-driven spawn scheduling | `TemporalScheduler` extracts per-DOW hourly weights from a POS CSV (`temporal_profile.py`) and uses them to scale spawn intervals across time-of-day periods; falls back to synthetic PDF when no POS data is attached |
+| Rich per-run KPIs | `PerRunSummary` carries `kpis`, `sku_breakdown`, `traffic_edges`, `queue_data`, and `worker_timeseries`; all populated by `SimRun.execute()` and surfaced in the results panel |
+| Node/edge property sanitization | `layout.js` validates and clamps every numeric field via `sanitizeNodePatch` / `sanitizeEdgePatch` on load and on every store mutation; integer/string ID mismatches resolved via `sameEntityId` helper |
+| Polling hardening | Temporal store caps polling at 400 attempts (~10 min), stops on 404/410, and surfaces a clear error state; `trackNewSim()` lets external callers (layout test, wizard) hand off a job to the poller |
+| POS bundle auto-pairing | `_find_matching_yaml` strips the `.pos` suffix, so `mystore.pos.csv` automatically pairs with `mystore.yaml` in saved layout bundles |
 | Streamlit dashboard | Simulation controls + charts, POS analysis mode |
 | Jupyter notebooks | End-to-end examples: transactions, heatmaps, queue time-series |
 

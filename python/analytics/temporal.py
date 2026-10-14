@@ -36,12 +36,21 @@ from __future__ import annotations
 import math
 import os
 import sys
+import json
+import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 import yaml
+
+from python.analytics.temporal_profile import (
+    load_blended_hourly_weights,
+    overall_hourly_mean,
+    period_intensity_from_hourly,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +68,23 @@ _PERIOD_BOUNDARIES = [
     ("evening", 14.0,  17.0),   # 14:00 → 17:00
     ("close",   17.0,  None),   # 17:00 → close_hour
 ]
+
+_DEBUG_LOG_PATH = os.path.join(os.getcwd(), "debug-570d5e.log")
+
+
+def _write_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    payload = {
+        "sessionId": "570d5e",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+        "id": f"log_{uuid.uuid4().hex}",
+    }
+    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, separators=(",", ":")) + "\n")
 
 
 def _intraday_pdf(hour: float) -> float:
@@ -112,7 +138,7 @@ class SimulationRangeConfig:
     base_spawn_interval: float = 5.0    # baseline interval at average density
     mission_probability: float = 0.5
     seed: int = 42
-    dt: float = 1.0 / 60.0             # simulation timestep
+    dt: float = 1.0 / 10.0             # simulation timestep
     num_stockers: int = 2
     num_cashiers: int = 1
     auto_stock_tasks: bool = True
@@ -120,6 +146,12 @@ class SimulationRangeConfig:
     # Optional explicit date whitelist (weekday_repeat / custom_days presets).
     # When set, only dates in this set are simulated regardless of range.
     active_dates: Optional[List[date]] = None
+    # POS-driven intraday shape (Guidotti-style collective hour-of-day regularities).
+    pos_csv_path: Optional[str] = None
+    # Precomputed 24-hour weights per DOW (0=Mon) and pooled fallback; if None but
+    # pos_csv_path is set, TemporalScheduler loads from file.
+    hourly_weights_by_dow: Optional[Dict[int, List[float]]] = None
+    hourly_weights_pooled: Optional[List[float]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +170,15 @@ class TemporalScheduler:
     def __init__(self, config: SimulationRangeConfig) -> None:
         self._cfg = config
         self._day_schedule = self._load_schedule()
+        self._hw_by_dow: Optional[Dict[int, List[float]]] = config.hourly_weights_by_dow
+        self._hw_pooled: Optional[List[float]] = config.hourly_weights_pooled
+        if self._hw_by_dow is None and self._hw_pooled is None and config.pos_csv_path:
+            try:
+                self._hw_by_dow, self._hw_pooled = load_blended_hourly_weights(
+                    config.pos_csv_path
+                )
+            except Exception:
+                self._hw_by_dow, self._hw_pooled = None, None
         self._sim_days: List[SimDay] = self._build_sim_days()
 
     # ── Public ────────────────────────────────────────────────────────────
@@ -212,10 +253,20 @@ class TemporalScheduler:
 
         return schedule
 
-    def _build_spawn_periods(self, open_h: int, close_h: int) -> List[SpawnPeriod]:
-        """Build 3-4 SpawnPeriod objects whose spawn intervals track the PDF."""
-        # Normalise: compute overall average PDF for the open window.
-        overall_avg = _period_avg_pdf(open_h, close_h)
+    def _hourly_vector_for_dow(self, dow: int) -> Optional[List[float]]:
+        if self._hw_pooled is None and self._hw_by_dow is None:
+            return None
+        if self._hw_by_dow and dow in self._hw_by_dow:
+            return self._hw_by_dow[dow]
+        return self._hw_pooled
+
+    def _build_spawn_periods(self, open_h: int, close_h: int, dow: int) -> List[SpawnPeriod]:
+        """Build 3-4 SpawnPeriod objects whose spawn intervals track PDF or POS hourly weights."""
+        hourly = self._hourly_vector_for_dow(dow)
+        if hourly is not None:
+            overall_avg = overall_hourly_mean(hourly, open_h, close_h)
+        else:
+            overall_avg = _period_avg_pdf(open_h, close_h)
 
         periods: List[SpawnPeriod] = []
         for name, lo, hi in _PERIOD_BOUNDARIES:
@@ -224,7 +275,12 @@ class TemporalScheduler:
             if p_end_h <= p_start_h:
                 continue  # period falls outside this day's window
 
-            avg = _period_avg_pdf(p_start_h, p_end_h)
+            if hourly is not None:
+                avg = period_intensity_from_hourly(
+                    hourly, open_h, close_h, p_start_h, p_end_h
+                )
+            else:
+                avg = _period_avg_pdf(p_start_h, p_end_h)
             relative_intensity = avg / max(overall_avg, 1e-9)
             # More intensity → shorter interval (more customers per sim-second)
             interval = max(0.5, self._cfg.base_spawn_interval / relative_intensity)
@@ -263,7 +319,7 @@ class TemporalScheduler:
                     window = (o, c)
                 open_h, close_h = window
                 duration = (close_h - open_h) * 3600.0
-                periods = self._build_spawn_periods(open_h, close_h)
+                periods = self._build_spawn_periods(open_h, close_h, dow)
                 days.append(SimDay(
                     date=current,
                     day_of_week=dow,
@@ -332,6 +388,21 @@ def run_temporal_simulation(
 
     scheduler = TemporalScheduler(config)
     sim_days = scheduler.get_sim_days()
+    # #region agent log
+    _write_debug_log(
+        run_id="pre-fix",
+        hypothesis_id="H10",
+        location="temporal.py:run_temporal_simulation:init",
+        message="Temporal run initialized",
+        data={
+            "storeYaml": config.store_yaml,
+            "simDays": len(sim_days),
+            "dt": config.dt,
+            "baseSpawnInterval": config.base_spawn_interval,
+            "seed": config.seed,
+        },
+    )
+    # #endregion
 
     if not sim_days:
         raise ValueError("No active simulation days in the requested range.")
@@ -368,6 +439,20 @@ def run_temporal_simulation(
     accumulated_time: float      = 0.0
 
     for sd in sim_days:
+        # #region agent log
+        _write_debug_log(
+            run_id="pre-fix",
+            hypothesis_id="H11",
+            location="temporal.py:run_temporal_simulation:day_start",
+            message="Starting simulation day",
+            data={
+                "date": sd.date.isoformat(),
+                "openHour": sd.open_hour,
+                "closeHour": sd.close_hour,
+                "periodCount": len(sd.spawn_periods),
+            },
+        )
+        # #endregion
         sim.reset()
         sim.set_seed(config.seed ^ hash(sd.date) & 0xFFFFFFFF)
 
@@ -381,7 +466,79 @@ def run_temporal_simulation(
         for period in sd.spawn_periods:
             sim.set_spawn_interval(period.spawn_interval)
             period_duration = period.end_offset - period.start_offset
-            sim.run(period_duration, config.dt)
+            # #region agent log
+            _write_debug_log(
+                run_id="pre-fix",
+                hypothesis_id="H12",
+                location="temporal.py:run_temporal_simulation:period_before_run",
+                message="About to call sim.run for period",
+                data={
+                    "date": sd.date.isoformat(),
+                    "periodName": period.name,
+                    "periodDuration": period_duration,
+                    "spawnInterval": period.spawn_interval,
+                    "startOffset": period.start_offset,
+                    "endOffset": period.end_offset,
+                },
+            )
+            # #endregion
+            # Chunk long runs so we can observe progress and avoid one giant blocking call.
+            # This also helps distinguish "slow but progressing" from a true deadlock.
+            chunk_seconds = 120.0
+            remaining = period_duration
+            chunk_idx = 0
+            while remaining > 1e-9:
+                chunk_idx += 1
+                this_chunk = min(chunk_seconds, remaining)
+                # #region agent log
+                _write_debug_log(
+                    run_id="post-fix",
+                    hypothesis_id="H15",
+                    location="temporal.py:run_temporal_simulation:chunk_before_run",
+                    message="About to run simulation chunk",
+                    data={
+                        "date": sd.date.isoformat(),
+                        "periodName": period.name,
+                        "chunkIndex": chunk_idx,
+                        "chunkSeconds": this_chunk,
+                        "remainingBefore": remaining,
+                        "elapsedBefore": float(sim.elapsed_time),
+                    },
+                )
+                # #endregion
+                target_elapsed = float(sim.elapsed_time) + float(this_chunk)
+                sim.run(target_elapsed, config.dt)
+                remaining -= this_chunk
+                # #region agent log
+                _write_debug_log(
+                    run_id="post-fix",
+                    hypothesis_id="H15",
+                    location="temporal.py:run_temporal_simulation:chunk_after_run",
+                    message="Completed simulation chunk",
+                    data={
+                        "date": sd.date.isoformat(),
+                        "periodName": period.name,
+                        "chunkIndex": chunk_idx,
+                        "remainingAfter": remaining,
+                        "elapsedAfter": float(sim.elapsed_time),
+                        "transactionsSoFar": sim.transaction_count(),
+                    },
+                )
+                # #endregion
+            # #region agent log
+            _write_debug_log(
+                run_id="post-fix",
+                hypothesis_id="H12",
+                location="temporal.py:run_temporal_simulation:period_after_run",
+                message="Completed full period",
+                data={
+                    "date": sd.date.isoformat(),
+                    "periodName": period.name,
+                    "periodDuration": period_duration,
+                    "transactionsSoFar": sim.transaction_count(),
+                },
+            )
+            # #endregion
 
         # ── Capture per-day sim metrics before reset ───────────────────────
         # Cell heatmap (accumulate by adding counts)
@@ -410,6 +567,7 @@ def run_temporal_simulation(
                         "lane_index":   lane_idx,
                         "time_s":       accumulated_time + q_times[i],
                         "queue_length": lane_samples[i],
+                        "sim_date":     sd.date.isoformat(),
                     })
 
         # Worker mood samples
@@ -428,7 +586,22 @@ def run_temporal_simulation(
             d = tx.to_dict()
             d["sim_date"]      = sd.date.isoformat()
             d["day_of_week"]   = _DOW[sd.day_of_week] if verbose else sd.day_of_week
-            for item in tx.items():
+            items = tx.items()
+            if not items:
+                # Match analytics.core.transactions_to_frame: header-only row so KPI
+                # DataFrames still see transaction/customer counts when line items are empty.
+                all_transactions.append(
+                    {
+                        **d,
+                        "item_id": None,
+                        "item_name": None,
+                        "quantity": 0,
+                        "price_per_unit": 0.0,
+                        "item_total": 0.0,
+                    }
+                )
+                continue
+            for item in items:
                 row = {**d, **item.to_dict()}
                 all_transactions.append(row)
 

@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace priceriot {
@@ -125,14 +126,41 @@ class NavMesh {
     // Validation
     bool validate() const;
 
-    // Clear all polygons
+    // Clear all polygons and caches
     void clear() {
         polygons.clear();
+        spatialGrid_.clear();
+        spatialIndexBuilt_ = false;
+        pathCache_.clear();
+    }
+
+    // Path cache: keyed by (startPolyIdx << 22 | goalPolyIdx) → polygon corridor
+    const std::vector<int>* lookupPathCache(int startPoly, int goalPoly) const {
+        int64_t key = (static_cast<int64_t>(startPoly) << 22) | static_cast<int64_t>(goalPoly);
+        auto it = pathCache_.find(key);
+        return (it != pathCache_.end()) ? &it->second : nullptr;
+    }
+    void insertPathCache(int startPoly, int goalPoly, const std::vector<int>& path) const {
+        int64_t key = (static_cast<int64_t>(startPoly) << 22) | static_cast<int64_t>(goalPoly);
+        pathCache_.emplace(key, path);
     }
 
   private:
     std::vector<NavPolygon> polygons;
 
+    // Spatial acceleration index
+    static constexpr double kGridCellSize = 4.0;
+    mutable std::unordered_map<int64_t, std::vector<int>> spatialGrid_;
+    mutable bool spatialIndexBuilt_ = false;
+
+    // A* polygon-path cache (navmesh is static, so paths are immutable after build)
+    mutable std::unordered_map<int64_t, std::vector<int>> pathCache_;
+
+    void buildSpatialIndex() const;
+    static int64_t cellKey(int cx, int cz) {
+        return (static_cast<int64_t>(static_cast<uint32_t>(cx)) << 32) |
+               static_cast<int64_t>(static_cast<uint32_t>(cz));
+    }
     static double distanceSquared(double x1, double z1, double x2, double z2);
 };
 

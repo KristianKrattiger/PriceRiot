@@ -43,6 +43,10 @@ class Agent {
     [[nodiscard]] double getDistOnEdge() const noexcept { return distOnEdge_; }
     void setDistOnEdge(double dist) noexcept { distOnEdge_ = dist; }
 
+    /** When traversing a graph edge: true = integrate toward YAML to-node; false = toward from-node. */
+    [[nodiscard]] bool isEdgeTraverseForward() const noexcept { return edgeTraverseForward_; }
+    void setEdgeTraverseForward(bool v) noexcept { edgeTraverseForward_ = v; }
+
     [[nodiscard]] double getSpeed() const noexcept { return speed_; }
     void setSpeed(double s) noexcept { speed_ = s; }
 
@@ -74,6 +78,7 @@ class Agent {
     double posZ_             = 0.0;
     int    currentEdgeIndex_ = -1;
     double distOnEdge_       = 0.0;
+    bool   edgeTraverseForward_ = true;
     double speed_            = 1.0;
 };
 

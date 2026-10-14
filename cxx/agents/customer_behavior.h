@@ -36,6 +36,8 @@ struct Decision {
     enum DecisionType { Move, SwitchEdge, PickProduct, Wait, Checkout, Despawn } type = Move;
     int targetId = -1;
     float duration = 0.0f;
+    /** Used when type == SwitchEdge: integrate distOnEdge toward YAML to-node when true, toward from-node when false. */
+    bool edgeTraverseForward = true;
 };
 
 /** Abstract base for customer decision logic. Subclass to implement different shopping behaviors. */
@@ -68,9 +70,9 @@ class DefaultBehavior : public ICustomerBehavior {
     mutable State state = Entering;
     mutable int targetAisleNode = -1;
     mutable std::vector<int> preferredAisleNodes;
-
-    int getNextEdgeToNode(int currentNodeId, int targetNodeId, const StoreGraph &store) const;
-    int getNextEdgeToNodeType(int currentNodeId, int targetType, const StoreGraph &store) const;
+    // Stuck-waypoint detection: accumulates dt seconds targeting the same waypoint without reaching it.
+    mutable float waypointStuckSeconds = 0.0f;
+    mutable size_t lastNavmeshWaypointIdx = static_cast<size_t>(-1);
 };
 
 /** Mission behavior: targets specific SKUs, minimal wandering, quick exit after list complete. */
@@ -92,6 +94,9 @@ class MissionBehavior : public ICustomerBehavior {
     mutable size_t missionIndex = 0;
     mutable int missionTargetEdgeIdx = -1;
     mutable int missionTargetCellIdx = -1;
+    // Stuck-waypoint detection: accumulates dt seconds targeting the same waypoint without reaching it.
+    mutable float waypointStuckSeconds = 0.0f;
+    mutable size_t lastNavmeshWaypointIdx = static_cast<size_t>(-1);
 };
 
 } // namespace priceriot

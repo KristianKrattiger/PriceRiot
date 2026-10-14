@@ -92,6 +92,22 @@ static void attach_inventory_to_cell_from_yaml(const YAML::Node &planRoot,
         }
     }
     if (skipDefaultPlanogram) {
+        // Edges incident to Entrance/Exit skip YAML top-level defaults (see below).
+        // On a minimal graph (only Entrance–Register–Exit) every edge matches this,
+        // so without a synthetic SKU pass the store has no pickable stock and
+        // simulations record zero sales. Mirror the generic fallback when the
+        // catalog is loaded but both sides are still empty.
+        const auto &pmSkip = catalog.getProductsMap();
+        if (!pmSkip.empty() && left.bay_count == 0 && right.bay_count == 0 &&
+            !planRoot["left_side"] && !planRoot["right_side"]) {
+            const int firstSku = pmSkip.begin()->first;
+            left.bay_count = 1;
+            left.bays[0].face_count = 1;
+            left.bays[0].faces[0].slot_count = 1;
+            left.bays[0].faces[0].slots[0].sku_id = static_cast<std::uint32_t>(firstSku);
+            left.bays[0].faces[0].slots[0].qty_on_face = 10;
+            onShelfQuantitySum[static_cast<std::uint32_t>(firstSku)] += 10;
+        }
         cell.set_left_inventory(left);
         cell.set_right_inventory(right);
         return;
@@ -337,7 +353,9 @@ void StoreGraph::loadFromYaml(const std::string &path) {
     std::filesystem::path storePath(path);
     std::filesystem::path baseDir =
         storePath.has_parent_path() ? storePath.parent_path() : std::filesystem::current_path();
-    std::string productsFile = "store_products.yaml";
+    // Default matches examples/*.yaml and the web layout editor — resolves via
+    // resolveProductsPath() to data/raw/products.csv under the project root.
+    std::string productsFile = "data/raw/products.csv";
     if (auto pf = root["products_file"]; pf && pf.IsScalar())
         productsFile = pf.as<std::string>();
 

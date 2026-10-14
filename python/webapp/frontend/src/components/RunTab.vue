@@ -7,6 +7,49 @@
         Run configuration
       </h2>
 
+      <!-- ── Presets ── -->
+      <div class="space-y-2">
+        <div class="flex items-center gap-2">
+          <select
+            class="flex-1 bg-surface-deep border border-rim px-2 py-1.5 text-[11px] font-mono text-ink
+                   focus:outline-none focus:border-tangerine transition-colors"
+            @change="onLoadPreset($event.target.value); $event.target.value = ''"
+          >
+            <option value="" disabled selected>Load preset…</option>
+            <option v-for="p in presetsStore.presets" :key="p.id" :value="p.id">
+              {{ p.name }}
+            </option>
+          </select>
+          <button
+            @click="promptSavePreset"
+            class="px-3 py-1.5 text-[11px] font-mono border border-rim text-ink-ghost
+                   hover:text-ink hover:bg-surface-hover transition-colors shrink-0"
+            title="Save current parameters as a preset"
+          >Save preset</button>
+        </div>
+        <div v-if="savePresetPrompt" class="flex items-center gap-2">
+          <input
+            v-model="presetName"
+            type="text"
+            placeholder="Preset name…"
+            class="flex-1 bg-surface-deep border border-rim px-2 py-1.5 text-[11px] font-mono text-ink
+                   focus:outline-none focus:border-tangerine transition-colors"
+            @keydown.enter="confirmSavePreset"
+            @keydown.escape="savePresetPrompt = false"
+          />
+          <button
+            @click="confirmSavePreset"
+            :disabled="!presetName.trim()"
+            class="px-3 py-1.5 text-[11px] font-mono border border-mustard/50 text-mustard
+                   hover:bg-mustard/10 transition-colors shrink-0 disabled:opacity-40"
+          >Save</button>
+          <button
+            @click="savePresetPrompt = false"
+            class="px-2 py-1.5 text-[11px] font-mono text-ink-ghost hover:text-ink transition-colors"
+          >✕</button>
+        </div>
+      </div>
+
       <!-- ── Identity ── -->
       <div class="space-y-3">
         <p class="text-[11px] uppercase tracking-label text-rust/70">Identity</p>
@@ -73,17 +116,17 @@
         <!-- Store layout YAML -->
         <div class="space-y-1.5">
           <label class="block text-[11px] uppercase tracking-label text-ink-ghost">Store layout YAML</label>
-          <div class="flex gap-2">
+          <div class="flex gap-2 min-w-0">
             <input type="file" accept=".yaml,.yml" ref="yamlInput" class="hidden" @change="onYamlUpload" />
             <div
-              class="flex-1 bg-surface-deep border border-rim px-3 py-2 text-sm font-mono truncate cursor-pointer
+              class="min-w-0 flex-1 bg-surface-deep border border-rim px-3 py-2 text-sm font-mono truncate cursor-pointer
                      hover:border-tangerine transition-colors duration-150"
               :class="cfg.store_yaml ? 'text-ink' : 'text-ink-ghost'"
               @click="$refs.yamlInput.click()"
             >{{ cfg.store_yaml || "No file selected…" }}</div>
             <button
               class="px-3 py-1.5 text-[11px] font-mono border border-rim text-ink-ghost
-                     hover:bg-surface-hover transition-colors shrink-0"
+                     hover:bg-surface-hover transition-colors shrink-0 whitespace-nowrap"
               @click="$refs.yamlInput.click()"
             >{{ uploadingYaml ? "Uploading…" : "Upload YAML" }}</button>
           </div>
@@ -422,14 +465,20 @@
     </div>
 
     <!-- ── RIGHT: Temporal simulation history ─────────────────────────────── -->
-    <div class="space-y-4 lg:sticky lg:top-6 lg:self-start">
+    <div class="space-y-4 lg:sticky lg:top-6 lg:self-start lg:ml-12">
       <div class="flex items-center justify-between">
         <h2 class="text-[11px] uppercase tracking-label text-rust font-medium">
           Recent simulations
         </h2>
+        <button
+          v-if="store.simulations.length > 0"
+          @click="clearAll"
+          class="text-[10px] font-mono text-ink-ghost/50 hover:text-danger transition-colors"
+          title="Clear all simulations"
+        >Clear all</button>
       </div>
 
-      <div class="space-y-1 max-h-[600px] overflow-y-auto">
+      <div class="space-y-1 max-h-[min(600px,calc(100vh-320px))] overflow-y-auto">
         <div
           v-for="sim in store.simulations"
           :key="sim.sim_id"
@@ -472,12 +521,35 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useTemporalStore } from "../stores/temporal";
+import { useRunPresetsStore } from "../stores/runPresets";
 import { uploadFile, fetchPosParams } from "../api/client";
 
 const emit = defineEmits(["submitted"]);
 
-const store = useTemporalStore();
-const cfg   = store.activeConfig;
+const store        = useTemporalStore();
+const presetsStore = useRunPresetsStore();
+const cfg          = store.activeConfig;
+
+// ── Preset UI state ────────────────────────────────────────────────────────
+const savePresetPrompt = ref(false);
+const presetName       = ref("");
+
+function promptSavePreset() {
+  presetName.value = "";
+  savePresetPrompt.value = true;
+}
+
+function confirmSavePreset() {
+  if (!presetName.value.trim()) return;
+  presetsStore.savePreset(presetName.value.trim(), cfg);
+  savePresetPrompt.value = false;
+  presetName.value = "";
+}
+
+function onLoadPreset(presetId) {
+  if (!presetId) return;
+  presetsStore.applyPreset(presetId, cfg);
+}
 
 const submitError = ref("");
 
@@ -769,6 +841,14 @@ function viewSim(simId) {
 async function deleteSim(simId) {
   try {
     await store.deleteSimulation(simId);
+  } catch {
+    // non-fatal
+  }
+}
+
+async function clearAll() {
+  try {
+    await store.clearAllSimulations();
   } catch {
     // non-fatal
   }

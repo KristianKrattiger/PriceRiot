@@ -19,6 +19,8 @@ import json
 import math
 import os
 import re
+import shutil
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,49 @@ def layouts_dir(project_root: str) -> str:
     return d
 
 
+def _webapp_root() -> str:
+    """Repository root (parent of python/)."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _layout_stem(filename: str) -> str:
+    for ext in (".yaml", ".yml"):
+        if filename.lower().endswith(ext):
+            return filename[: -len(ext)]
+    return filename
+
+
+def _resolve_csv_source(
+    project_root: str,
+    name: str | None,
+    layouts_directory: str,
+) -> str | None:
+    """Return absolute path to an existing CSV, or None."""
+    if not name or not str(name).strip():
+        return None
+    name = str(name).strip()
+    if os.path.isabs(name) and os.path.isfile(name):
+        return name
+    candidates: list[str] = []
+    norm = name.replace("\\", "/")
+    candidates.append(os.path.normpath(os.path.join(project_root, norm)))
+    for d in (
+        layouts_directory,
+        os.path.join(project_root, "data", "tmp", "webapp_uploads"),
+        os.path.join(project_root, "data", "raw"),
+    ):
+        candidates.append(os.path.join(d, name))
+        candidates.append(os.path.join(d, os.path.basename(name)))
+    seen: set[str] = set()
+    for c in candidates:
+        if c in seen:
+            continue
+        seen.add(c)
+        if os.path.isfile(c):
+            return c
+    return None
+
+
 def _sidecar_path(yaml_path: str) -> str:
     stem = yaml_path
     for ext in (".yaml", ".yml"):
@@ -44,19 +89,36 @@ def _sidecar_path(yaml_path: str) -> str:
     return stem + ".meta.json"
 
 
-def _load_sidecar(yaml_path: str) -> list[dict]:
-    """Return freeObjects list from companion .meta.json, or []."""
+def _load_sidecar(yaml_path: str) -> tuple[list[dict], str | None]:
+    """Return (freeObjects, posDataset basename) from companion .meta.json."""
     p = _sidecar_path(yaml_path)
-    if os.path.isfile(p):
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f).get("freeObjects", [])
-    return []
+    if not os.path.isfile(p):
+        return [], None
+    with open(p, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    if isinstance(raw, list):
+        return raw, None
+    free = raw.get("freeObjects", [])
+    if not isinstance(free, list):
+        free = []
+    pos = raw.get("posDataset")
+    if pos is not None and not isinstance(pos, str):
+        pos = None
+    return free, pos
 
 
-def _save_sidecar(yaml_path: str, free_objects: list[dict]) -> None:
+def _save_sidecar(
+    yaml_path: str,
+    free_objects: list[dict],
+    pos_dataset: str | None = None,
+) -> None:
     p = _sidecar_path(yaml_path)
+    payload: dict[str, Any] = {
+        "freeObjects": free_objects,
+        "posDataset": pos_dataset,
+    }
     with open(p, "w", encoding="utf-8") as f:
-        json.dump({"freeObjects": free_objects}, f, indent=2)
+        json.dump(payload, f, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +159,7 @@ def parse_yaml(path: str) -> dict:
             "serviceRate":     float(n.get("service_rate", 0.0)),
             "entryRate":       float(n.get("entry_rate", 0.0)),
             "exitRate":        float(n.get("exit_rate", 0.0)),
+            "angle":           float(n.get("angle", 0.0)),
         })
 
     # ── Edges ──────────────────────────────────────────────────────────────
@@ -137,8 +200,10 @@ def parse_yaml(path: str) -> dict:
                         "onShelfQty": int(item.get("on_shelf_qty", 0)),
                     })
             planogram[str(eid_str)] = {
-                "bayCountLeft":  int(edata.get("left_side",  {}).get("bay_count", 1)),
-                "bayCountRight": int(edata.get("right_side", {}).get("bay_count", 1)),
+                "bayCountLeft":   int(edata.get("left_side",  {}).get("bay_count",  1)),
+                "bayCountRight":  int(edata.get("right_side", {}).get("bay_count",  1)),
+                "faceCountLeft":  int(edata.get("left_side",  {}).get("face_count", 1)),
+                "faceCountRight": int(edata.get("right_side", {}).get("face_count", 1)),
                 "cells": cells,
             }
 
@@ -164,15 +229,26 @@ def parse_yaml(path: str) -> dict:
                 "close": _fmt_hour(int(window.get("close", 19))),
             }
 
-    # ── Boundary — computed from node positions when not stored ────────────
-    boundary = _compute_boundary(nodes)
+    # ── Boundary — prefer stored polygon, fall back to computed ───────────
+    stored_boundary = data.get("boundary")
+    boundary = (
+        [{"x": float(p["x"]), "y": float(p["y"])} for p in stored_boundary]
+        if stored_boundary
+        else _compute_boundary(nodes)
+    )
 
-    # ── freeObjects from sidecar ───────────────────────────────────────────
-    free_objects = _load_sidecar(path)
+    # ── freeObjects + POS attachment from sidecar ──────────────────────────
+    free_objects, pos_dataset = _load_sidecar(path)
+
+    # Strip uploads-dir prefix so the frontend always sees a bare filename.
+    _pf = data.get("products_file") or None
+    if _pf and _pf.startswith("data/tmp/webapp_uploads/"):
+        _pf = _pf[len("data/tmp/webapp_uploads/"):]
 
     return {
         "units":         data.get("units", "legacy"),
-        "productsFile":  data.get("products_file"),
+        "productsFile":  _pf,
+        "posCsvName":    pos_dataset,
         "boundary":      boundary,
         "nodes":         nodes,
         "edges":         edges,
@@ -238,10 +314,25 @@ def to_yaml(layout: dict) -> str:
             "agents":        0,
             "entry_rate":    _r(n.get("entryRate", 0.0)),
             "exit_rate":     _r(n.get("exitRate",  0.0)),
+            "angle":         _r(n.get("angle", 0.0)),
         })
 
     edges_out: list[dict] = []
     for e in layout.get("edges", []):
+        raw_flow = str(e.get("flow", "bi"))
+        raw_ornt = str(e.get("orientation", "fwd"))
+        if raw_flow == "rev":
+            norm_flow = "uni"
+            norm_ornt = "bwd"
+        elif raw_flow == "fwd":
+            norm_flow = "uni"
+            norm_ornt = "fwd"
+        elif raw_flow == "bi":
+            norm_flow = "bi"
+            norm_ornt = "fwd" if raw_ornt not in {"fwd", "bwd"} else raw_ornt
+        else:
+            norm_flow = "uni"
+            norm_ornt = "bwd" if raw_ornt == "bwd" else "fwd"
         edges_out.append({
             "id":          int(e["id"]),
             "from":        int(e["nodeA"]),
@@ -251,8 +342,8 @@ def to_yaml(layout: dict) -> str:
             "free_speed":  _r(e.get("freeSpeed", 1.0)),
             "jam_density": _r(e.get("jamDensity", 3.5)),
             "blocked":     _r(e.get("blockedFraction", 0.0)),
-            "flow":        str(e.get("flow",        "bi")),
-            "orientation": str(e.get("orientation", "fwd")),
+            "flow":        norm_flow,
+            "orientation": norm_ornt,
             "shelf_left":  _r(e.get("shelfLeft",  0.0)),
             "shelf_right": _r(e.get("shelfRight", 0.0)),
             "edge_type":   str(e.get("edgeType", "aisle")),
@@ -278,8 +369,8 @@ def to_yaml(layout: dict) -> str:
             ]
 
         plano_edges[eid_str] = {
-            "left_side":  {"bay_count": int(plano.get("bayCountLeft",  1)), "planogram": _cells(left_cells)},
-            "right_side": {"bay_count": int(plano.get("bayCountRight", 1)), "planogram": _cells(right_cells)},
+            "left_side":  {"bay_count": int(plano.get("bayCountLeft",  1)), "face_count": int(plano.get("faceCountLeft",  1)), "planogram": _cells(left_cells)},
+            "right_side": {"bay_count": int(plano.get("bayCountRight", 1)), "face_count": int(plano.get("faceCountRight", 1)), "planogram": _cells(right_cells)},
         }
 
     # checkout queues
@@ -303,8 +394,18 @@ def to_yaml(layout: dict) -> str:
         hours_out[day] = {"open": open_h, "close": close_h}
 
     doc: dict[str, Any] = {"units": layout.get("units", "feet")}
-    if layout.get("productsFile"):
-        doc["products_file"] = layout["productsFile"]
+    # productsFile: bundled copies use basename `stem.products.csv` next to this YAML
+    # (resolved by the C++ loader relative to the store file). Bare names are uploads.
+    pf = layout.get("productsFile") or "data/raw/products.csv"
+    if "/" not in pf and "\\" not in pf:
+        if pf.endswith(".products.csv"):
+            doc["products_file"] = pf
+        else:
+            doc["products_file"] = "data/tmp/webapp_uploads/" + pf
+    else:
+        doc["products_file"] = pf
+    if layout.get("boundary"):
+        doc["boundary"] = [{"x": _r(p["x"]), "y": _r(p["y"])} for p in layout["boundary"]]
     doc["days_of_operation"]  = days_op
     doc["hours_of_operation"] = hours_out
     doc["nodes"] = nodes_out
@@ -338,24 +439,101 @@ def auto_version(name: str, layouts_directory: str) -> str:
 def save_layout(name: str, overwrite: bool, layout: dict,
                 layouts_directory: str) -> tuple[str, str]:
     """
-    Persist layout to YAML (+ freeObjects sidecar).
+    Persist layout to YAML (+ sidecar).
 
-    Returns (filename, version_stem).
-    If overwrite=False and name.yaml exists, auto-versions.
+    Copies product CSV to ``{stem}.products.csv`` and optional POS CSV to
+    ``{stem}.pos.csv`` beside the YAML so the bundle is self-contained.
     """
     stem = name if overwrite else auto_version(name, layouts_directory)
     yaml_path = os.path.join(layouts_directory, stem + ".yaml")
-    yaml_text = to_yaml(layout)
+    root = _webapp_root()
+
+    prod_src_name = layout.get("productsFile")
+    if not prod_src_name:
+        prod_src = os.path.join(root, "data", "raw", "products.csv")
+    else:
+        prod_src = _resolve_csv_source(root, prod_src_name, layouts_directory)
+    if not prod_src or not os.path.isfile(prod_src):
+        raise FileNotFoundError(
+            f"Product CSV not found (productsFile={prod_src_name!r}). "
+            f"Upload a catalog or use data/raw/products.csv."
+        )
+
+    prod_dest = os.path.join(layouts_directory, f"{stem}.products.csv")
+    shutil.copy2(prod_src, prod_dest)
+
+    pos_dest_name: str | None = None
+    pos_name = layout.get("posCsvName")
+    stale_pos = os.path.join(layouts_directory, f"{stem}.pos.csv")
+    if pos_name:
+        pos_src = _resolve_csv_source(root, pos_name, layouts_directory)
+        if pos_src and os.path.isfile(pos_src):
+            pos_dest = os.path.join(layouts_directory, f"{stem}.pos.csv")
+            shutil.copy2(pos_src, pos_dest)
+            pos_dest_name = f"{stem}.pos.csv"
+    elif os.path.isfile(stale_pos):
+        try:
+            os.remove(stale_pos)
+        except OSError:
+            pass
+
+    layout_out = dict(layout)
+    layout_out["productsFile"] = f"{stem}.products.csv"
+    yaml_text = to_yaml(layout_out)
     with open(yaml_path, "w", encoding="utf-8") as f:
         f.write(yaml_text)
-    if layout.get("freeObjects"):
-        _save_sidecar(yaml_path, layout["freeObjects"])
+
+    free_objects = layout.get("freeObjects") or []
+    _save_sidecar(yaml_path, free_objects, pos_dest_name)
     return stem + ".yaml", stem
+
+
+def delete_layout_data_files(layouts_directory: str, filename: str) -> None:
+    """Remove bundled CSV copies for a layout (same stem as the YAML)."""
+    stem = _layout_stem(filename)
+    for suffix in (".products.csv", ".pos.csv"):
+        p = os.path.join(layouts_directory, stem + suffix)
+        if os.path.isfile(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
+def _directed_nav_adjacency(layout: dict) -> dict[int, set[int]]:
+    """
+    Match C++ Navigator BFS: only edges (nodeA → nodeB), plus reverse when flow is bi.
+    """
+    adj: dict[int, set[int]] = {}
+    for e in layout.get("edges", []):
+        a = int(e["nodeA"])
+        b = int(e["nodeB"])
+        adj.setdefault(a, set()).add(b)
+        if str(e.get("flow", "bi")) == "bi":
+            adj.setdefault(b, set()).add(a)
+    return adj
+
+
+def _reachable(adj: dict[int, set[int]], starts: set[int], goals: set[int]) -> bool:
+    if not starts or not goals:
+        return True
+    q: deque[int] = deque(starts)
+    visited = set(starts)
+    goals_frozen = frozenset(goals)
+    while q:
+        cur = q.popleft()
+        if cur in goals_frozen:
+            return True
+        for nb in adj.get(cur, ()):
+            if nb not in visited:
+                visited.add(nb)
+                q.append(nb)
+    return False
+
 
 def validate(layout: dict) -> list[str]:
     """Return a list of validation error strings. Empty list = valid."""
@@ -403,6 +581,28 @@ def validate(layout: dict) -> list[str]:
         errors.append(
             f"Register node(s) {sorted(missing_queues)} have no checkout_queue entry."
         )
+
+    # Directed customer navigation (C++ Navigator::findNextEdge* only follows
+    # edge from→to; bi edges are traversable both ways). Undirected connectivity
+    # is not enough — layouts like a reversed aisle segment trap agents with no
+    # outgoing edge at a junction.
+    nav_adj = _directed_nav_adjacency(layout)
+    entrance_ids = {int(n["id"]) for n in nodes if n.get("type") == "Entrance"}
+    register_ids_nav = {int(n["id"]) for n in nodes if n.get("type") == "Register"}
+    exit_ids = {int(n["id"]) for n in nodes if n.get("type") == "Exit"}
+    if entrance_ids and register_ids_nav:
+        if not _reachable(nav_adj, entrance_ids, register_ids_nav):
+            errors.append(
+                "Directed navigation: no path from Entrance to Register along edge "
+                "directions (the sim treats each edge as from→to; use flow: bi for "
+                "two-way aisles and orient segments toward the register)."
+            )
+    if register_ids_nav and exit_ids:
+        if not _reachable(nav_adj, register_ids_nav, exit_ids):
+            errors.append(
+                "Directed navigation: no path from Register to Exit along edge "
+                "directions (add an aisle from register to exit, or fix orientations)."
+            )
 
     return errors
 

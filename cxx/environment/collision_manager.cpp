@@ -151,24 +151,8 @@ void CollisionManager::resolveCollisions(Customer *agent, double radius) {
                 // Push both agents apart with mass consideration
                 double pushAmount = overlap / 2.0;
 
-                // Clamp push so neither ends up inside an obstacle
-                if (physicsWorld) {
-                    double lo = 0.0, hi = pushAmount;
-                    for (int iter = 0; iter < 16; ++iter) {
-                        double mid = (lo + hi) * 0.5;
-                        double newAx = agentX + nx * mid * (2.0 * agentMassRatio);
-                        double newAz = agentZ + nz * mid * (2.0 * agentMassRatio);
-                        double newOx = otherX - nx * mid * (2.0 * (1.0 - agentMassRatio));
-                        double newOz = otherZ - nz * mid * (2.0 * (1.0 - agentMassRatio));
-                        bool aOk = physicsWorld->isValidPosition(newAx, newAz, radius);
-                        bool oOk = physicsWorld->isValidPosition(newOx, newOz, other.radius);
-                        if (aOk && oOk)
-                            lo = mid;
-                        else
-                            hi = mid;
-                    }
-                    pushAmount = lo;
-                }
+                // Any obstacle penetration caused by this push is handled by the
+                // physicsWorld->resolveCollision pass at the end of this function.
 
                 // Apply displacement with mass ratio
                 agent->setPosition(agentX + nx * pushAmount * (2.0 * agentMassRatio),

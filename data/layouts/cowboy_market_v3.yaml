@@ -1,0 +1,742 @@
+units: legacy
+products_file: cowboy_market_v2.products.csv
+boundary:
+- x: -10.0
+  y: -10.0
+- x: 47.0
+  y: -10.0
+- x: 47.0
+  y: 10.0
+- x: -10.0
+  y: 10.0
+days_of_operation:
+- Mon
+- Tue
+- Wed
+- Thu
+- Fri
+- Sat
+hours_of_operation:
+  Mon:
+    open: 9
+    close: 19
+  Tue:
+    open: 9
+    close: 19
+  Wed:
+    open: 9
+    close: 19
+  Thu:
+    open: 9
+    close: 19
+  Fri:
+    open: 9
+    close: 20
+  Sat:
+    open: 9
+    close: 20
+nodes:
+- id: 1
+  type: Entrance
+  x: 47.0
+  z: -0.283
+  length: 4.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 1.0
+  exit_rate: 0.0
+  angle: 90.0
+- id: 2
+  type: Junction
+  x: 8.0
+  z: -7.0
+  length: 3.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 3
+  type: Junction
+  x: 8.0
+  z: 0.0
+  length: 3.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 4
+  type: Junction
+  x: 8.0
+  z: 7.0
+  length: 3.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 5
+  type: Junction
+  x: 20.0
+  z: -7.0
+  length: 3.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 6
+  type: Junction
+  x: 20.0
+  z: 0.0
+  length: 3.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 8
+  type: Junction
+  x: 20.0
+  z: 7.0
+  length: 3.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 10
+  type: Register
+  x: 40.0
+  z: -7.0
+  length: 6.0
+  width: 4.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 5.0
+  service_rate: 0.5
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 9
+  type: Stockroom
+  x: -10.0
+  z: 6.885
+  length: 4.0
+  width: 4.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: -90.0
+- id: 7
+  type: Exit
+  x: 47.0
+  z: -7.168
+  length: 4.0
+  width: 3.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 1.0
+  angle: 90.0
+- id: 11
+  type: Junction
+  x: 40.0
+  z: 0.0
+  length: 4.0
+  width: 4.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 12
+  type: Junction
+  x: 29.0
+  z: 0.0
+  length: 4.0
+  width: 4.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 13
+  type: Junction
+  x: 29.0
+  z: -7.0
+  length: 4.0
+  width: 4.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+- id: 14
+  type: Junction
+  x: 29.0
+  z: 7.0
+  length: 4.0
+  width: 4.0
+  shelf_left: 0.0
+  shelf_right: 0.0
+  blocked: 0.0
+  personal_space: 1.0
+  jam_density: 3.5
+  dwell_s: 0.0
+  service_rate: 0.0
+  agents: 0
+  entry_rate: 0.0
+  exit_rate: 0.0
+  angle: 0.0
+edges:
+- id: 2
+  from: 2
+  to: 3
+  length: 7.0
+  width: 3.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 3
+  from: 3
+  to: 4
+  length: 7.0
+  width: 3.8
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 4
+  from: 2
+  to: 5
+  length: 12.0
+  width: 5.8
+  free_speed: 1.0
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.7
+  shelf_right: 0.7
+  edge_type: aisle
+- id: 5
+  from: 3
+  to: 6
+  length: 12.0
+  width: 6.3
+  free_speed: 1.0
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.7
+  shelf_right: 0.7
+  edge_type: aisle
+- id: 6
+  from: 4
+  to: 8
+  length: 12.0
+  width: 5.8
+  free_speed: 1.0
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.7
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 7
+  from: 5
+  to: 6
+  length: 7.0
+  width: 3.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 8
+  from: 6
+  to: 8
+  length: 7.0
+  width: 3.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 10
+  from: 10
+  to: 7
+  length: 7.0
+  width: 3.5
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 15
+  from: 9
+  to: 4
+  length: 18.0
+  width: 5.4
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 16
+  from: 11
+  to: 10
+  length: 7.0
+  width: 3.9
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 17
+  from: 11
+  to: 1
+  length: 7.01
+  width: 5.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 18
+  from: 12
+  to: 6
+  length: 9.0
+  width: 5.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 19
+  from: 12
+  to: 11
+  length: 11.0
+  width: 5.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 20
+  from: 13
+  to: 12
+  length: 7.0
+  width: 5.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 21
+  from: 13
+  to: 10
+  length: 11.0
+  width: 4.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 22
+  from: 14
+  to: 12
+  length: 7.0
+  width: 10.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 23
+  from: 8
+  to: 14
+  length: 9.0
+  width: 5.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+- id: 24
+  from: 5
+  to: 13
+  length: 9.0
+  width: 5.0
+  free_speed: 1.2
+  jam_density: 3.5
+  blocked: 0.0
+  flow: bi
+  orientation: fwd
+  shelf_left: 0.0
+  shelf_right: 0.0
+  edge_type: aisle
+# =============================================================================
+# v3 PLANOGRAM — "Food Forward"
+#
+# Key differences vs v2:
+#   Edge 4 (south side aisle):  Western Apparel (Cowboy Hat, Boots, Belt, Vest)
+#                               replaces Ranch Supplies
+#   Edge 5 (center aisle):      All top-popularity Cowboy Food on left side;
+#                               mid-tier food + Work Gloves on right side
+#   Edge 6 (north side aisle):  Ranch Supplies + Rodeo/Leather consolidated here
+#
+# Hypothesis: concentrating high-popularity food in the most-trafficked center
+# aisle (edge 5) should lift food category unit sales vs v2's mixed placement.
+# =============================================================================
+planogram:
+  edges:
+    # ------------------------------------------------------------------
+    # Edge 4  (node 2 → 5, south side aisle)
+    # v2: only right_side with Ranch Supplies (lasso rope + horse feed)
+    # v3: Western Apparel on BOTH sides — high-ticket impulse buys
+    # ------------------------------------------------------------------
+    '4':
+      left_side:
+        bay_count: 2
+        face_count: 1
+        planogram:
+        # Cowboy Hat (sku 19, $34.99, pop 0.80) — premium placement
+        - bay: 0
+          face: 0
+          slot: 0
+          sku: 19
+          on_shelf_qty: 10
+        # Cowboy Boots (sku 20, $89.99, pop 0.70)
+        - bay: 1
+          face: 0
+          slot: 0
+          sku: 20
+          on_shelf_qty: 8
+      right_side:
+        bay_count: 2
+        face_count: 1
+        planogram:
+        # Leather Belt (sku 23, $19.99, pop 0.55)
+        - bay: 0
+          face: 0
+          slot: 0
+          sku: 23
+          on_shelf_qty: 15
+        # Denim Vest (sku 24, $39.99, pop 0.50)
+        - bay: 1
+          face: 0
+          slot: 0
+          sku: 24
+          on_shelf_qty: 10
+    # ------------------------------------------------------------------
+    # Edge 5  (node 3 → 6, center aisle — highest expected foot traffic)
+    # v2: food + ranch mixed (sku 14, 2, 4, 8, 16)
+    # v3: pure Cowboy Food on left; mid-tier food + ranch staple on right
+    # ------------------------------------------------------------------
+    '5':
+      left_side:
+        bay_count: 3
+        face_count: 2
+        planogram:
+        # Bay 0 — highest popularity food at aisle entrance
+        - bay: 0
+          face: 0
+          slot: 0
+          sku: 4           # Trail Beef Jerky ($5.99, pop 0.85)
+          on_shelf_qty: 25
+        - bay: 0
+          face: 0
+          slot: 1
+          sku: 3           # Smoky BBQ Sauce ($4.49, pop 0.80)
+          on_shelf_qty: 20
+        - bay: 0
+          face: 1
+          slot: 0
+          sku: 1           # Chuckwagon Beans ($2.99, pop 0.75)
+          on_shelf_qty: 25
+        # Bay 1 — mid-popularity food
+        - bay: 1
+          face: 0
+          slot: 0
+          sku: 2           # Campfire Chili ($3.99, pop 0.70)
+          on_shelf_qty: 20
+        - bay: 1
+          face: 1
+          slot: 0
+          sku: 10          # Smoked Sausage Links ($8.99, pop 0.70)
+          on_shelf_qty: 15
+        # Bay 2 — specialty food
+        - bay: 2
+          face: 0
+          slot: 0
+          sku: 6           # Campfire Coffee ($7.99, pop 0.60)
+          on_shelf_qty: 15
+        - bay: 2
+          face: 1
+          slot: 0
+          sku: 9           # Dried Apple Slices ($4.99, pop 0.60)
+          on_shelf_qty: 15
+      right_side:
+        bay_count: 3
+        face_count: 2
+        planogram:
+        # Bay 0 — remaining food items
+        - bay: 0
+          face: 0
+          slot: 0
+          sku: 5           # Cornbread Mix ($3.49, pop 0.65)
+          on_shelf_qty: 20
+        - bay: 0
+          face: 1
+          slot: 0
+          sku: 7           # Prairie Honey ($6.49, pop 0.55)
+          on_shelf_qty: 15
+        - bay: 0
+          face: 0
+          slot: 1
+          sku: 8           # Hardtack Biscuits ($2.49, pop 0.50)
+          on_shelf_qty: 20
+        # Bay 1 — Ranch staple (cross-sell adjacent to food)
+        - bay: 1
+          face: 0
+          slot: 0
+          sku: 14          # Work Gloves ($6.99, pop 0.75)
+          on_shelf_qty: 20
+        - bay: 1
+          face: 1
+          slot: 0
+          sku: 11          # Lasso Rope ($14.99, pop 0.65)
+          on_shelf_qty: 10
+        # Bay 2 — Ranch staple continued
+        - bay: 2
+          face: 0
+          slot: 0
+          sku: 13          # Saddle Oil ($9.99, pop 0.55)
+          on_shelf_qty: 15
+        - bay: 2
+          face: 1
+          slot: 0
+          sku: 16          # Hay Bale Twine ($5.99, pop 0.50)
+          on_shelf_qty: 20
+    # ------------------------------------------------------------------
+    # Edge 6  (node 4 → 8, north side aisle)
+    # v2: Ranch Supplies + Rodeo/Leather/Apparel mixed
+    # v3: Ranch Supplies + Rodeo/Leather consolidated — lower-frequency
+    #     specialty buys grouped together
+    # ------------------------------------------------------------------
+    '6':
+      left_side:
+        bay_count: 3
+        face_count: 2
+        planogram:
+        # Bay 0 — Ranch hardware
+        - bay: 0
+          face: 0
+          slot: 0
+          sku: 12          # Horse Feed Sack ($19.99, pop 0.50)
+          on_shelf_qty: 10
+        - bay: 0
+          face: 0
+          slot: 1
+          sku: 15          # Fence Wire 50ft ($12.99, pop 0.45)
+          on_shelf_qty: 10
+        - bay: 0
+          face: 1
+          slot: 0
+          sku: 17          # Stock Tank Float ($8.49, pop 0.40)
+          on_shelf_qty: 15
+        # Bay 1 — Rodeo gear
+        - bay: 1
+          face: 0
+          slot: 0
+          sku: 25          # Riding Spurs ($22.99, pop 0.55)
+          on_shelf_qty: 12
+        - bay: 1
+          face: 1
+          slot: 0
+          sku: 26          # Rodeo Rope ($18.99, pop 0.45)
+          on_shelf_qty: 12
+        # Bay 2 — Leather goods
+        - bay: 2
+          face: 0
+          slot: 0
+          sku: 28          # Leather Saddlebag ($59.99, pop 0.45)
+          on_shelf_qty: 8
+        - bay: 2
+          face: 1
+          slot: 0
+          sku: 30          # Leather Journal ($14.99, pop 0.50)
+          on_shelf_qty: 15
+      right_side:
+        bay_count: 1
+        face_count: 2
+        planogram:
+        # Apparel + accessories (low-frequency, back of store)
+        - bay: 0
+          face: 0
+          slot: 0
+          sku: 21          # Red Bandana ($4.99, pop 0.60)
+          on_shelf_qty: 20
+        - bay: 0
+          face: 1
+          slot: 0
+          sku: 22          # Flannel Shirt ($29.99, pop 0.65)
+          on_shelf_qty: 10
+        - bay: 0
+          face: 0
+          slot: 1
+          sku: 27          # Bull Rope Rosin ($7.49, pop 0.40)
+          on_shelf_qty: 15
+        - bay: 0
+          face: 1
+          slot: 1
+          sku: 18          # Branding Iron ($24.99, pop 0.35)
+          on_shelf_qty: 8
+checkout_queues:
+- register_id: 10
+  processing_time: 5.0
+  waypoints:
+  - x: 32.0
+    z: -4.0
+  - x: 30.0
+    z: -4.0
+  - x: 28.0
+    z: -4.0
+  - x: 26.0
+    z: -4.0
+  - x: 24.0
+    z: -4.0

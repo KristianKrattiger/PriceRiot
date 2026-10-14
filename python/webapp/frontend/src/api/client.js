@@ -114,6 +114,11 @@ export async function deleteSimulation(simId) {
   await api.delete(`/simulations/${simId}`);
 }
 
+export async function deleteAllSimulations() {
+  const { data } = await api.delete("/simulations");
+  return data;
+}
+
 export async function fetchSystemInfo() {
   const { data } = await api.get("/system/info");
   return data;

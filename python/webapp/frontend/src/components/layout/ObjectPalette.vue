@@ -15,6 +15,14 @@
         </button>
       </div>
 
+      <!-- Boundary -->
+      <div class="space-y-1">
+        <p class="px-1 text-[9px] uppercase tracking-label text-ink-ghost/50">Boundary</p>
+        <button v-bind="btn('boundary')" @click="pick('boundary')">
+          <span class="w-4 text-center shrink-0 text-[10px]">⬡</span> Edit Boundary
+        </button>
+      </div>
+
       <!-- Nodes -->
       <div class="space-y-1">
         <p class="px-1 text-[9px] uppercase tracking-label text-ink-ghost/50">Nodes</p>
@@ -29,6 +37,9 @@
         </button>
         <button v-bind="btn('exit')" @click="pick('exit')">
           <span class="w-4 text-center shrink-0 text-[9px] text-danger">◀</span> Exit
+        </button>
+        <button v-bind="btn('stockroom')" @click="pick('stockroom')">
+          <span class="w-4 text-center shrink-0 text-[10px]">▨</span> Stockroom
         </button>
       </div>
 

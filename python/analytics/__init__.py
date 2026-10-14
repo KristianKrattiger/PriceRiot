@@ -1,13 +1,3 @@
-from .core import (
-    SimulationResult,
-    cell_heatmap_to_frame,
-    customers_to_frame,
-    get_project_root,
-    queue_metrics_to_frame,
-    run_simulation,
-    run_simulation_to_csv,
-    transactions_to_frame,
-)
 from .temporal import (
     SimDay,
     SimulationRangeConfig,
@@ -24,7 +14,7 @@ from .orchestrator import (
 )
 
 __all__ = [
-    # core
+    # core (lazy — see __getattr__)
     "SimulationResult",
     "run_simulation",
     "run_simulation_to_csv",
@@ -47,3 +37,23 @@ __all__ = [
     "AggregateSummary",
 ]
 
+_CORE_NAMES = frozenset(
+    {
+        "SimulationResult",
+        "run_simulation",
+        "run_simulation_to_csv",
+        "transactions_to_frame",
+        "customers_to_frame",
+        "cell_heatmap_to_frame",
+        "queue_metrics_to_frame",
+        "get_project_root",
+    }
+)
+
+
+def __getattr__(name: str):
+    if name in _CORE_NAMES:
+        from . import core
+
+        return getattr(core, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

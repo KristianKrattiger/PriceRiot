@@ -82,29 +82,42 @@ bool Customer::update(const float dt, const StoreGraph &store, const Basket &bas
     // 3. Act on Decision
     switch (dec.type) {
         case Decision::Wait:
-            if (behaviorState.dwellTicks > 0)
-                behaviorState.dwellTicks--;
+            if (behaviorState.dwellTimeSeconds > 0.0f)
+                behaviorState.dwellTimeSeconds -= dt;
             break;
 
         case Decision::Move: {
-            const double newDist = getDistOnEdge() + getSpeed() * dt;
             if (getCurrentEdgeIndex() != -1) {
-                const double len = store.edgeAt(getCurrentEdgeIndex()).getLength();
-                setDistOnEdge(newDist > len + 1.0 ? len : newDist);
+                const auto &edge = store.edgeAt(getCurrentEdgeIndex());
+                const double len = edge.getLength();
+                const double step = getSpeed() * dt;
+                if (isEdgeTraverseForward()) {
+                    const double newDist = getDistOnEdge() + step;
+                    setDistOnEdge(newDist > len + 1.0 ? len : newDist);
+                } else {
+                    const double newDist = getDistOnEdge() - step;
+                    setDistOnEdge(newDist < -1.0 ? 0.0 : newDist);
+                }
             } else {
-                setDistOnEdge(newDist);
+                setDistOnEdge(getDistOnEdge() + getSpeed() * dt);
             }
             break;
         }
 
         case Decision::SwitchEdge:
             setCurrentEdgeIndex(dec.targetId);
-            setDistOnEdge(0.0);
+            if (dec.targetId >= 0) {
+                setEdgeTraverseForward(dec.edgeTraverseForward);
+                const double len = store.edgeAt(dec.targetId).getLength();
+                setDistOnEdge(dec.edgeTraverseForward ? 0.0 : len);
+            } else {
+                setDistOnEdge(0.0);
+            }
             behaviorState.lastShopCell = -1;
             break;
 
         case Decision::PickProduct:
-            behaviorState.dwellTicks += static_cast<int>(dec.duration * 60);
+            behaviorState.dwellTimeSeconds += dec.duration;
             break;
 
         case Decision::Checkout:
@@ -167,7 +180,7 @@ void Customer::setAverageSpend(const double avg) {
     averageSpend = avg;
 }
 void Customer::setDwellTicks(int ticks) {
-    behaviorState.dwellTicks = ticks;
+    behaviorState.dwellTimeSeconds = static_cast<float>(ticks) / 60.0f;
 }
 
 void Customer::updateLoyalty(const int satisfaction) {

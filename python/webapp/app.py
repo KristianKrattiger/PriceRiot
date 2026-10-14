@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import sys
 import tempfile
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional
+
+_pr_log = logging.getLogger("priceriot")
+if not _pr_log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%H:%M:%S"))
+    _pr_log.addHandler(_h)
+_pr_log.setLevel(logging.INFO)
+_pr_log.propagate = False
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,13 +30,14 @@ from analytics import get_project_root
 
 from .comparison import comparison_engine
 from .layout_serializer import (
+    delete_layout_data_files as _delete_layout_data_files,
     layouts_dir as _layouts_dir_fn,
     parse_yaml as _parse_yaml,
     save_layout as _save_layout,
     validate as _validate_layout,
 )
 from .models import ComparisonRequest, RunConfig, RunResult, RunStatus
-from .sim_models import SimJobConfig, SimJobResult
+from .sim_models import SimJobConfig, SimJobResult, SimJobStatus
 from .sim_runner import run_simulation_job
 from .sim_storage import sim_job_store
 from .simulation_runner import simulation_runner
@@ -245,6 +256,9 @@ def _examples_dir() -> str:
 def _find_matching_yaml(csv_basename: str, search_dirs: list[str]) -> str | None:
     """Look for a YAML with the same stem as *csv_basename* in *search_dirs*."""
     stem = os.path.splitext(csv_basename)[0]
+    # Layout bundle: ``mystore.pos.csv`` → pair with ``mystore.yaml``
+    if stem.endswith(".pos"):
+        stem = stem[: -len(".pos")]
     for d in search_dirs:
         for ext in (".yaml", ".yml"):
             p = os.path.join(d, stem + ext)
@@ -307,19 +321,22 @@ async def list_pos_datasets() -> list[dict]:
     """Enumerate available POS CSV files with metadata for the dataset picker."""
     uploads = _uploads_dir_path()
     raw     = _raw_dir()
+    layouts_d = _layouts_dir_fn(get_project_root())
     all_dirs = [uploads, raw]
 
-    # Locate YAMLs in uploads, raw, and examples dirs for name lookup.
-    yaml_search_dirs = [uploads, raw, _examples_dir(), get_project_root()]
+    # Locate YAMLs in uploads, raw, examples, and layouts for name lookup.
+    yaml_search_dirs = [uploads, raw, _examples_dir(), get_project_root(), layouts_d]
 
     datasets = []
     seen = set()
 
-    for d in all_dirs:
+    for d in (*all_dirs, layouts_d):
         if not os.path.isdir(d):
             continue
         for fname in sorted(os.listdir(d)):
             if not fname.lower().endswith(".csv"):
+                continue
+            if d == layouts_d and not fname.lower().endswith(".pos.csv"):
                 continue
             if fname in seen:
                 continue
@@ -359,7 +376,10 @@ async def get_pos_params(filename: str) -> dict:
     """Extract simulation parameters (spawn interval, avg basket value) from a POS CSV."""
     import sys as _sys
     root = get_project_root()
-    for d in (os.path.join(root, "data", "tmp", "webapp_uploads"), os.path.join(root, "data", "raw")):
+    layouts_d = _layouts_dir_fn(root)
+    for d in (os.path.join(root, "data", "tmp", "webapp_uploads"),
+              os.path.join(root, "data", "raw"),
+              layouts_d):
         p = os.path.join(d, filename)
         if os.path.isfile(p):
             _sys.path.insert(0, os.path.join(root, "python"))
@@ -371,12 +391,34 @@ async def get_pos_params(filename: str) -> dict:
     raise HTTPException(status_code=404, detail=f"Dataset not found: {filename}")
 
 
+def _sim_status_diagnostic_hint(job: SimJobResult) -> Optional[str]:
+    """Short hint for telling apart queue issues vs long runs vs stuck sim."""
+    if job.status == SimJobStatus.QUEUED:
+        return (
+            "Still queued: if this persists, BackgroundTasks may not be running "
+            "(check uvicorn / single process)."
+        )
+    if job.status == SimJobStatus.RUNNING and job.workload and "error" not in job.workload:
+        sev = job.workload.get("severity")
+        if sev in ("large", "very_large"):
+            return (
+                "Large temporal workload — long runtime is expected; narrow the date range if unintended."
+            )
+        if job.progress.get("completed_runs", 0) == 0:
+            return (
+                "First statistical run in progress. Per-run timeout is 300s; "
+                "if CPU is idle, the sim may be blocked."
+            )
+    return None
+
+
 @app.post("/api/simulations", status_code=202)
 async def create_simulation(
     body: SimJobConfig,
     background_tasks: BackgroundTasks,
 ) -> SimJobResult:
     """Enqueue a temporal multi-run simulation job and return its ID immediately."""
+    print(f"[SIM] POST /api/simulations received, store_yaml={body.store_yaml!r}", flush=True)
     if not body.store_yaml:
         raise HTTPException(status_code=400, detail="store_yaml is required")
 
@@ -384,6 +426,7 @@ async def create_simulation(
     background_tasks.add_task(run_simulation_job, sim_id)
 
     job = await sim_job_store.get_job(sim_id)
+    print(f"[SIM] POST /api/simulations returning 202 sim_id={job.sim_id} status={job.status}", flush=True)
     return job
 
 
@@ -391,6 +434,13 @@ async def create_simulation(
 async def list_simulations() -> list[SimJobResult]:
     """Return all simulation jobs in reverse-chronological order."""
     return await sim_job_store.list_jobs()
+
+
+@app.delete("/api/simulations", status_code=200)
+async def delete_all_simulations():
+    """Delete all simulation jobs."""
+    count = await sim_job_store.delete_all_jobs()
+    return {"deleted": count}
 
 
 @app.delete("/api/simulations/{sim_id}", status_code=204)
@@ -413,6 +463,8 @@ async def get_simulation_status(sim_id: str) -> dict:
         "progress":      job.progress,
         "elapsed_seconds": job.elapsed_seconds,
         "error_message": job.error_message,
+        "workload":      job.workload,
+        "diagnostic_hint": _sim_status_diagnostic_hint(job),
     }
 
 
@@ -467,6 +519,145 @@ async def download_sim_run_transactions(sim_id: str, run_index: int):
 async def system_info() -> dict:
     """Expose server-side CPU count for the thread-limit default."""
     return {"cpu_count": os.cpu_count() or 4}
+
+
+# ---------------------------------------------------------------------------
+# Layout Test — quick single-run simulation launched from the layout editor
+# ---------------------------------------------------------------------------
+
+class LayoutTestRequest(BaseModel):
+    store_yaml:          str
+    duration_seconds:    float = 600.0
+    spawn_interval:      float = 5.0
+    mission_probability: float = 0.5
+    seed:                int   = 42
+
+
+_layout_test_log = __import__("logging").getLogger("priceriot.layout_test")
+
+
+async def _run_layout_test(sim_id: str, store_yaml_abs: str, req: LayoutTestRequest) -> None:
+    """Background task: runs a single analytics.run_simulation() call."""
+    import time
+    import traceback
+    from datetime import datetime, timezone
+
+    from .sim_models import PerRunSummary, SimJobStatus
+
+    try:
+        await sim_job_store.update_job(
+            sim_id,
+            status=SimJobStatus.RUNNING,
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        root = get_project_root()
+
+        def _run_sync():
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(root)  # C++ simulator resolves products_file relative to CWD
+                from python.analytics.core import run_simulation
+                return run_simulation(
+                    store_path=store_yaml_abs,
+                    duration_seconds=req.duration_seconds,
+                    spawn_interval=req.spawn_interval,
+                    mission_probability=req.mission_probability,
+                    seed=req.seed,
+                )
+            finally:
+                os.chdir(old_cwd)
+
+        t0 = time.monotonic()
+        try:
+            result = await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(None, _run_sync),
+                timeout=180.0,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"Layout test timed out after 180 s — the simulation may be stuck. "
+                f"Check store YAML for degenerate navmesh or missing exit nodes."
+            )
+        elapsed = time.monotonic() - t0
+
+        tx_count   = len(result.transactions)
+        cust_count = len(result.customers)
+        # item_total is the per-line-item column; sum across all rows = total revenue
+        if tx_count and "item_total" in result.transactions.columns:
+            revenue = float(result.transactions["item_total"].sum())
+        else:
+            revenue = 0.0
+
+        summary = PerRunSummary(
+            run_index=1,
+            transaction_count=tx_count,
+            customer_count=cust_count,
+            total_revenue=round(revenue, 2),
+            peak_period="n/a",
+            output_path="",
+            duration_seconds=round(elapsed, 2),
+            status="complete",
+        )
+
+        await sim_job_store.update_job(
+            sim_id,
+            status=SimJobStatus.COMPLETE,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            elapsed_seconds=round(elapsed, 2),
+            progress={"completed_runs": 1, "total_runs": 1},
+            per_runs=[summary],
+            aggregate={
+                "mean_transactions": tx_count,
+                "mean_revenue":      round(revenue, 2),
+                "mean_customers":    cust_count,
+                "std_transactions":  0.0,
+                "std_revenue":       0.0,
+                "completed_runs":    1,
+            },
+        )
+
+    except Exception as exc:
+        msg = traceback.format_exc()
+        _layout_test_log.error("layout_test %s failed:\n%s", sim_id, msg)
+        await sim_job_store.update_job(
+            sim_id,
+            status=SimJobStatus.FAILED,
+            error_message=str(exc) or repr(exc),
+        )
+
+
+@app.post("/api/layout-test", status_code=202)
+async def layout_test(body: LayoutTestRequest, background_tasks: BackgroundTasks) -> dict:
+    """Run a quick single-run layout test without POS data."""
+    # Resolve YAML path
+    yaml_abs: str | None = None
+    for d in _yaml_search_dirs():
+        p = os.path.join(d, body.store_yaml)
+        if os.path.isfile(p):
+            yaml_abs = p
+            break
+    if yaml_abs is None:
+        raise HTTPException(status_code=404, detail=f"Layout not found: {body.store_yaml}")
+
+    from .sim_models import DateConfig, SimJobConfig, SimJobStatus
+    from datetime import date
+
+    dummy_config = SimJobConfig(
+        pos_dataset="",
+        store_yaml=body.store_yaml,
+        preset="layout_test",
+        date_config=DateConfig(date=date.today().isoformat()),
+        runs=1,
+        max_threads=1,
+        label=f"Layout test: {body.store_yaml}",
+        seed=body.seed,
+        mission_probability=body.mission_probability,
+        spawn_interval=body.spawn_interval,
+    )
+    sim_id = await sim_job_store.create_job(dummy_config)
+    background_tasks.add_task(_run_layout_test, sim_id, yaml_abs, body)
+    return {"sim_id": sim_id}
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +761,7 @@ async def delete_layout(filename: str) -> Response:
             sidecar = p.replace(".yaml", ".meta.json").replace(".yml", ".meta.json")
             if os.path.isfile(sidecar):
                 os.remove(sidecar)
+            _delete_layout_data_files(d, filename)
             deleted = True
             break
     if not deleted:
@@ -582,30 +774,75 @@ async def get_products(csv: str) -> list[dict]:
     """Return product list parsed from an uploaded product CSV."""
     import csv as _csv
     root = get_project_root()
-    for d in (os.path.join(root, "data", "tmp", "webapp_uploads"),
-              os.path.join(root, "data", "raw")):
-        p = os.path.join(d, csv)
-        if os.path.isfile(p):
-            products = []
-            with open(p, "r", encoding="utf-8", errors="replace") as f:
-                reader = _csv.DictReader(f)
-                for row in reader:
-                    sku_id = row.get("sku_id") or row.get("sku") or row.get("id") or row.get("SKU")
-                    name   = row.get("name") or row.get("product_name") or row.get("description") or ""
-                    price  = row.get("price") or row.get("unit_price") or "0"
-                    cat    = row.get("category") or row.get("dept") or ""
-                    if sku_id:
-                        try:
-                            products.append({
-                                "skuId":    int(sku_id),
-                                "name":     name.strip(),
-                                "price":    float(str(price).replace("$", "").strip() or 0),
-                                "category": cat.strip(),
-                            })
-                        except (ValueError, TypeError):
-                            continue
-            return products
-    raise HTTPException(status_code=404, detail=f"Product CSV not found: {csv}")
+    uploads = os.path.join(root, "data", "tmp", "webapp_uploads")
+    raw_dir = os.path.join(root, "data", "raw")
+    layouts_dir = _layouts_dir_fn(root)
+
+    def _resolve_csv_path() -> str | None:
+        if not csv:
+            return None
+        if os.path.isabs(csv) and os.path.isfile(csv):
+            return csv
+        # Project-relative paths (e.g. data/raw/products.csv from store YAML)
+        rel = os.path.normpath(os.path.join(root, csv))
+        if os.path.isfile(rel):
+            return rel
+        for d in (uploads, raw_dir, layouts_dir):
+            for name in (csv, os.path.basename(csv)):
+                p = os.path.join(d, name)
+                if os.path.isfile(p):
+                    return p
+        return None
+
+    csv_path = _resolve_csv_path()
+    if not csv_path:
+        raise HTTPException(status_code=404, detail=f"Product CSV not found: {csv}")
+
+    products = []
+    with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
+        reader = _csv.DictReader(f)
+        # Build a lowercase→original key map for case-insensitive lookup
+        def _get(row, *keys):
+            lmap = {k.lower().strip(): v for k, v in row.items()}
+            for k in keys:
+                v = lmap.get(k.lower())
+                if v and str(v).strip():
+                    return str(v).strip()
+            return None
+        for row in reader:
+            sku_id = _get(row, "sku_id", "sku", "id", "product_id",
+                          "item_id", "barcode", "upc", "SKU", "ProductID")
+            name   = _get(row, "name", "product_name", "description",
+                          "item_name", "title") or ""
+            price  = _get(row, "price", "unit_price", "retail_price",
+                          "cost", "sell_price") or "0"
+            cat    = _get(row, "category", "dept", "department",
+                          "category_name", "section") or ""
+            if not sku_id:
+                continue
+            # Prefer integer SKU ID; fall back to string
+            try:
+                sku_val = int(sku_id)
+            except (ValueError, TypeError):
+                sku_val = sku_id
+            try:
+                price_val = float(str(price).replace("$", "").replace(",", "").strip() or 0)
+            except (ValueError, TypeError):
+                price_val = 0.0
+            products.append({
+                "skuId":    sku_val,
+                "name":     name.strip(),
+                "price":    price_val,
+                "category": cat.strip(),
+            })
+    return products
+
+
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+
+_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+if os.path.isdir(_dist):
+    app.mount("/", _StaticFiles(directory=_dist, html=True), name="spa")
 
 
 if __name__ == "__main__":

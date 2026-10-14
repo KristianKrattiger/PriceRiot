@@ -9,6 +9,7 @@ import {
   fetchSimulationHistory,
   fetchSystemInfo,
   deleteSimulation as apiDeleteSimulation,
+  deleteAllSimulations as apiDeleteAllSimulations,
 } from "../api/client";
 
 export const useTemporalStore = defineStore("temporal", {
@@ -155,10 +156,13 @@ export const useTemporalStore = defineStore("temporal", {
 
     _startPolling(simId) {
       if (this.pollingTimer) clearInterval(this.pollingTimer);
+      let attempts = 0;
+      const MAX_ATTEMPTS = 400; // ~10 min at 1.5s
       this.pollingTimer = setInterval(async () => {
+        attempts++;
         try {
           const status = await pollSimulationStatus(simId);
-          const idx = this.simulations.findIndex((s) => s.sim_id === simId);
+          const idx = this.simulations.findIndex((s) => String(s.sim_id) === String(simId));
           if (idx !== -1) {
             this.simulations[idx] = { ...this.simulations[idx], ...status };
           }
@@ -169,8 +173,24 @@ export const useTemporalStore = defineStore("temporal", {
             // Fetch full results
             await this.fetchResults(simId);
           }
-        } catch {
-          // keep polling
+        } catch (err) {
+          // Stop polling on 404 (sim gone after server restart) or hard limit
+          const status = err?.response?.status;
+          if (status === 404 || status === 410 || attempts >= MAX_ATTEMPTS) {
+            clearInterval(this.pollingTimer);
+            this.pollingTimer = null;
+            this.submitting = false;
+            // Mark the local entry as failed so UI shows an error state
+            const idx = this.simulations.findIndex((s) => s.sim_id === simId);
+            if (idx !== -1) {
+              this.simulations[idx] = {
+                ...this.simulations[idx],
+                status: "failed",
+                error_message: status === 404 ? "Simulation lost (server restarted)" : "Polling timed out",
+              };
+            }
+          }
+          // other transient errors: keep polling
         }
       }, 1500);
     },
@@ -215,12 +235,44 @@ export const useTemporalStore = defineStore("temporal", {
       if (sim) this.activeSimulation = sim;
     },
 
+    async trackNewSim(simId) {
+      // Called after an external submission (e.g. from layout editor).
+      // Fetches the job, adds it to the list, sets it active, and starts polling.
+      try {
+        const job = await fetchSimulationResults(simId);
+        const idx = this.simulations.findIndex((s) => s.sim_id === simId);
+        if (idx !== -1) {
+          this.simulations[idx] = job;
+        } else {
+          this.simulations.unshift(job);
+        }
+        this.activeSimulation = job;
+        if (job.status === "queued" || job.status === "running") {
+          this._startPolling(simId);
+        }
+      } catch {
+        // fallback: just refresh history
+        await this.fetchHistory();
+        const sim = this.simulations.find((s) => s.sim_id === simId);
+        if (sim) {
+          this.activeSimulation = sim;
+          this._startPolling(simId);
+        }
+      }
+    },
+
     async deleteSimulation(simId) {
       await apiDeleteSimulation(simId);
       this.simulations = this.simulations.filter((s) => s.sim_id !== simId);
       if (this.activeSimulation?.sim_id === simId) {
         this.activeSimulation = this.simulations[0] || null;
       }
+    },
+
+    async clearAllSimulations() {
+      await apiDeleteAllSimulations();
+      this.simulations = [];
+      this.activeSimulation = null;
     },
   },
 });

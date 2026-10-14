@@ -1,6 +1,6 @@
 # Implementation status vs plan
 
-This checklist tracks **[`.claude/implementation_plan.md`](.claude/implementation_plan.md)** against the codebase (**last reviewed: 2026-04-03**). Use it for roadmap planning, not as a CI gate.
+This checklist tracks **[`.claude/implementation_plan.md`](.claude/implementation_plan.md)** against the codebase (**last reviewed: 2026-04-15**). Use it for roadmap planning, not as a CI gate.
 
 Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentionally different)
 
@@ -82,6 +82,23 @@ Items in the plan’s “Deferred” table (pricing hooks, sweep API, layout opt
 | **Webapp simulation jobs** | `POST /api/simulations` and job store [`python/webapp/sim_runner.py`](python/webapp/sim_runner.py), [`python/webapp/sim_storage.py`](python/webapp/sim_storage.py) |
 | **Layout editor tab** | Vue: [`python/webapp/frontend/src/components/LayoutTab.vue`](python/webapp/frontend/src/components/LayoutTab.vue), backend serializer [`python/webapp/layout_serializer.py`](python/webapp/layout_serializer.py) |
 | **Utility scripts** | e.g. [`scripts/multi_run.py`](scripts/multi_run.py), [`scripts/sanity_check.py`](scripts/sanity_check.py) |
+
+---
+
+## Phase 7 — Spawn parameter extraction, rich KPIs, and layout test runs
+
+*Last reviewed: 2026-04-15*
+
+| Step | Item | Status | Evidence / notes |
+|------|------|--------|------------------|
+| 7.1 | POS-driven hourly spawn weights | **Done** | `TemporalScheduler._build_spawn_periods` now calls `load_blended_hourly_weights` from [`python/analytics/temporal_profile.py`](python/analytics/temporal_profile.py); per-DOW weights override the synthetic PDF when a `pos_csv_path` is set on `SimulationRangeConfig` |
+| 7.2 | Empty-transaction header rows | **Done** | `run_temporal_simulation` emits a header-only row for zero-item customers so KPI DataFrames still count transactions and customers even when no line items are recorded ([`python/analytics/temporal.py`](python/analytics/temporal.py)) |
+| 7.3 | Rich per-run KPIs on `PerRunSummary` | **Done** | `PerRunSummary` carries `kpis`, `sku_breakdown`, `traffic_edges`, `queue_data`, `worker_timeseries`; all populated via `SimRun.execute()` and surfaced in results panel ([`python/webapp/sim_models.py`](python/webapp/sim_models.py), [`python/webapp/sim_runner.py`](python/webapp/sim_runner.py)) |
+| 7.4 | Layout test endpoint | **Done** | `POST /api/layout-test` (202) triggers a single headless run from the layout editor; result registered in `sim_job_store` and polled by the temporal panel ([`python/webapp/app.py`](python/webapp/app.py)) |
+| 7.5 | Node/edge property sanitization | **Done** | `sanitizeNodePatch` / `sanitizeEdgePatch` validate and clamp every numeric property on load and mutation; `sameEntityId` resolves integer/string ID mismatches across all store lookups ([`python/webapp/frontend/src/stores/layout.js`](python/webapp/frontend/src/stores/layout.js), [`python/webapp/frontend/src/utils/entityIds.js`](python/webapp/frontend/src/utils/entityIds.js)) |
+| 7.6 | POS bundle auto-pairing | **Done** | `_find_matching_yaml` strips `.pos` suffix so `mystore.pos.csv` pairs with `mystore.yaml` automatically ([`python/webapp/app.py`](python/webapp/app.py)) |
+| 7.7 | Polling hardening + `trackNewSim` | **Done** | Temporal store caps at 400 poll attempts, stops on 404/410, shows error state; `trackNewSim()` lets external callers (layout test, wizard) hand off jobs to the poller ([`python/webapp/frontend/src/stores/temporal.js`](python/webapp/frontend/src/stores/temporal.js)) |
+| 7.8 | Windows MinGW DLL path | **Done** | `analytics/core.py` calls `os.add_dll_directory` for build dirs on win32 so MinGW-linked `.pyd` files load without PATH changes ([`python/analytics/core.py`](python/analytics/core.py)) |
 
 ---
 

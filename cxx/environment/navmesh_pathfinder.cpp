@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace priceriot {
@@ -36,101 +37,80 @@ std::vector<NavMeshPathfinder::PathPoint> NavMeshPathfinder::findPath(const NavM
         return {{startX, startZ}, {endX, endZ}};
     }
 
-    // A* search
-    std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> openSet;
+    // Path cache: reuse A* polygon corridor for identical (start, goal) polygon pairs.
+    // The navmesh is static so the polygon sequence never changes; only funnel smoothing
+    // needs actual world coords and is re-run cheaply on cache hits.
+    if (const std::vector<int>* cached = navmesh.lookupPathCache(startPolyIdx, goalPolyIdx)) {
+        return smoothPath(*cached, navmesh, startX, startZ, endX, endZ);
+    }
+
+    // A* search — O(N log N) using hash maps for O(1) cost lookup and correct parent tracking
+    struct HeapEntry {
+        double fCost;
+        int polygonIdx;
+        bool operator>(const HeapEntry &o) const { return fCost > o.fCost; }
+    };
+    std::priority_queue<HeapEntry, std::vector<HeapEntry>, std::greater<HeapEntry>> openSet;
     std::unordered_set<int> closedSet;
-    std::vector<AStarNode> allNodes; // Track all nodes for path reconstruction
+    std::unordered_map<int, double> gCostMap;  // polygon → best gCost seen
+    std::unordered_map<int, int> parentMap;    // polygon → parent polygon (-1 for start)
 
-    // Initialize start node
-    AStarNode startNode{};
-    startNode.polygonIdx = startPolyIdx;
-    startNode.gCost = 0.0;
-    startNode.hCost = heuristic(navmesh.getPolygon(startPolyIdx), endX, endZ);
-    startNode.parentIdx = -1;
+    gCostMap[startPolyIdx] = 0.0;
+    parentMap[startPolyIdx] = -1;
+    openSet.push({heuristic(navmesh.getPolygon(startPolyIdx), endX, endZ), startPolyIdx});
 
-    allNodes.push_back(startNode);
-    openSet.push(startNode);
-
-    int goalNodeIdx = -1;
+    bool found = false;
 
     while (!openSet.empty()) {
-        AStarNode current = openSet.top();
+        auto [fCost, curPoly] = openSet.top();
         openSet.pop();
 
-        if (closedSet.count(current.polygonIdx) > 0) {
-            continue;
-        }
+        if (closedSet.count(curPoly)) continue;
+        closedSet.insert(curPoly);
 
-        closedSet.insert(current.polygonIdx);
-
-        // Check if we reached the goal
-        if (current.polygonIdx == goalPolyIdx) {
-            // Find the actual node index in allNodes that matches current
-            for (size_t i = 0; i < allNodes.size(); ++i) {
-                if (allNodes[i].polygonIdx == current.polygonIdx &&
-                    std::abs(allNodes[i].gCost - current.gCost) < 0.001 &&
-                    allNodes[i].parentIdx == current.parentIdx) {
-                    goalNodeIdx = static_cast<int>(i);
-                    break;
-                }
-            }
-            if (goalNodeIdx < 0) {
-                goalNodeIdx = static_cast<int>(allNodes.size()) - 1;
-            }
+        if (curPoly == goalPolyIdx) {
+            found = true;
             break;
         }
 
-        // Explore neighbors
-        const NavPolygon &currentPoly = navmesh.getPolygon(current.polygonIdx);
-        const auto &neighbors = currentPoly.getNeighbors();
-
-        for (int neighborIdx : neighbors) {
-            if (closedSet.count(neighborIdx) > 0) {
-                continue;
-            }
+        double curG = gCostMap[curPoly];
+        const NavPolygon &currentPoly = navmesh.getPolygon(curPoly);
+        for (int neighborIdx : currentPoly.getNeighbors()) {
+            if (closedSet.count(neighborIdx)) continue;
 
             const NavPolygon &neighborPoly = navmesh.getPolygon(neighborIdx);
-            double newGCost = current.gCost + movementCost(currentPoly, neighborPoly);
+            double newG = curG + movementCost(currentPoly, neighborPoly);
 
-            // Check if we've seen this polygon with a better cost
-            bool foundBetter = false;
-            for (const auto &node : allNodes) {
-                if (node.polygonIdx == neighborIdx && node.gCost <= newGCost) {
-                    foundBetter = true;
-                    break;
-                }
-            }
-
-            if (!foundBetter) {
-                AStarNode neighborNode{};
-                neighborNode.polygonIdx = neighborIdx;
-                neighborNode.gCost = newGCost;
-                neighborNode.hCost = heuristic(neighborPoly, endX, endZ);
-                neighborNode.parentIdx = static_cast<int>(allNodes.size()) - 1;
-
-                allNodes.push_back(neighborNode);
-                openSet.push(neighborNode);
+            auto it = gCostMap.find(neighborIdx);
+            if (it == gCostMap.end() || newG < it->second) {
+                gCostMap[neighborIdx] = newG;
+                parentMap[neighborIdx] = curPoly;
+                double h = heuristic(neighborPoly, endX, endZ);
+                openSet.push({newG + h, neighborIdx});
             }
         }
     }
 
-    if (goalNodeIdx < 0) {
+    if (!found) {
         return {}; // No path found
     }
 
-    // Reconstruct path
+    // Reconstruct path as polygon sequence using parentMap
     std::vector<int> polygonPath;
-    int currentIdx = goalNodeIdx;
-    while (currentIdx >= 0) {
-        polygonPath.push_back(allNodes[currentIdx].polygonIdx);
-        currentIdx = allNodes[currentIdx].parentIdx;
+    int cur = goalPolyIdx;
+    while (cur >= 0) {
+        polygonPath.push_back(cur);
+        auto it = parentMap.find(cur);
+        if (it == parentMap.end() || it->second < 0) break;
+        cur = it->second;
     }
     std::reverse(polygonPath.begin(), polygonPath.end());
 
-    // Smooth path and convert to waypoints
-    std::vector<PathPoint> result = smoothPath(polygonPath, navmesh, startX, startZ, endX, endZ);
+    // Cache the polygon corridor for future identical queries.
+    navmesh.insertPathCache(startPolyIdx, goalPolyIdx, polygonPath);
 
-    return result;
+    // Smooth path and convert to waypoints
+    return smoothPath(polygonPath, navmesh, startX, startZ, endX, endZ);
 }
 
 double NavMeshPathfinder::heuristic(const NavPolygon &poly, double targetX, double targetZ) {
