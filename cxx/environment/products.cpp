@@ -191,7 +191,7 @@ static std::map<int, Product> loadProductsFromCSV_min(const std::string &path) {
             }
         }
 
-        out[sku] = Product{sku, name, category, price, popularity};
+        out[sku] = Product{sku, name, category, price, popularity, price};
     }
 
     return out;
@@ -205,12 +205,16 @@ Products::Products()
 // Add/Update by fields
 void Products::addProduct(int sku, const std::string &name, double price,
                           const std::string &category, double popularity) {
-    productsMap_[sku] = Product{sku, name, category, price, popularity};
+    productsMap_[sku] = Product{sku, name, category, price, popularity, price};
 }
 
 // Add/Update by struct
 void Products::addProduct(const Product &product) {
-    productsMap_[product.sku] = product;
+    Product p = product;
+    if (p.basePrice <= 0.0 && p.price > 0.0) {
+        p.basePrice = p.price;
+    }
+    productsMap_[p.sku] = p;
 }
 
 bool Products::removeProduct(int sku) {
@@ -222,7 +226,7 @@ Product Products::getProduct(int sku) const {
         return it->second;
     }
     // Not found: return a sentinel Product (sku 0) so callers don't crash.
-    return Product{0, "", "", 0.0, 0.0};
+    return Product{0, "", "", 0.0, 0.0, 0.0};
 }
 
 std::string Products::getProductCategory(int sku) const {
@@ -231,6 +235,11 @@ std::string Products::getProductCategory(int sku) const {
 
 double Products::getProductPrice(int sku) const {
     return getProduct(sku).price;
+}
+
+double Products::getProductBasePrice(int sku) const {
+    const Product p = getProduct(sku);
+    return p.basePrice > 0.0 ? p.basePrice : p.price;
 }
 
 double Products::getProductPopularity(int sku) const {
@@ -243,7 +252,21 @@ bool Products::productExists(int sku) const {
 
 bool Products::updatePrice(int sku, double newPrice) {
     if (auto it = productsMap_.find(sku); it != productsMap_.end()) {
+        if (it->second.basePrice <= 0.0 && it->second.price > 0.0) {
+            it->second.basePrice = it->second.price;
+        }
         it->second.price = newPrice;
+        if (it->second.basePrice <= 0.0 && newPrice > 0.0) {
+            it->second.basePrice = newPrice;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool Products::resetBasePrice(int sku, double newBasePrice) {
+    if (auto it = productsMap_.find(sku); it != productsMap_.end()) {
+        it->second.basePrice = newBasePrice;
         return true;
     }
     return false;

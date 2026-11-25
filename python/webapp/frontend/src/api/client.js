@@ -48,6 +48,28 @@ export async function getIngestionProfile(runId) {
   return data;
 }
 
+export async function updateRunWorkers(runId, workerConfig) {
+  const { data } = await api.post(`/runs/${runId}/workers`, workerConfig);
+  return data;
+}
+
+export async function createSweep(payload, runAsync = false) {
+  const { data } = await api.post("/sweeps", payload, {
+    params: runAsync ? { run_async: true } : undefined,
+  });
+  return data;
+}
+
+export async function listSweeps() {
+  const { data } = await api.get("/sweeps");
+  return data;
+}
+
+export async function getSweep(sweepId) {
+  const { data } = await api.get(`/sweeps/${sweepId}`);
+  return data;
+}
+
 export async function deleteAllRuns() {
   const { data } = await api.delete("/runs");
   return data;

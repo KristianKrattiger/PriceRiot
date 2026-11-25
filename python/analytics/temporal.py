@@ -378,10 +378,11 @@ def run_temporal_simulation(
                   f"({len(sd.spawn_periods)} periods) ...", end=" ", flush=True)
 
         # Step through each intraday period, adjusting spawn interval.
+        # Note: Simulator.run(target_elapsed, dt) advances until elapsed_time >= target_elapsed,
+        # so we pass cumulative period.end_offset rather than period duration.
         for period in sd.spawn_periods:
             sim.set_spawn_interval(period.spawn_interval)
-            period_duration = period.end_offset - period.start_offset
-            sim.run(period_duration, config.dt)
+            sim.run(period.end_offset, config.dt)
 
         # ── Capture per-day sim metrics before reset ───────────────────────
         # Cell heatmap (accumulate by adding counts)

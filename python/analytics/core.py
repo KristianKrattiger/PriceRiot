@@ -1,7 +1,7 @@
 import os
 import sys
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 import pandas as pd
 
@@ -131,6 +131,8 @@ def run_simulation(
     num_cashiers: int = 1,
     auto_stock_tasks: bool = True,
     auto_register_tasks: bool = True,
+    sku_prices: Optional[Dict[int, float]] = None,
+    price_multiplier: Optional[float] = None,
 ) -> SimulationResult:
     """
     Run a headless simulation and return results as pandas DataFrames.
@@ -162,6 +164,13 @@ def run_simulation(
                 sim.set_worker_config(num_stockers, num_cashiers, auto_stock_tasks, auto_register_tasks)
             except Exception:
                 pass
+    if price_multiplier is not None and hasattr(sim, "get_sku_prices") and hasattr(sim, "set_sku_price"):
+        for sku_id, cur_price in sim.get_sku_prices().items():
+            if cur_price > 0:
+                sim.set_sku_price(int(sku_id), round(float(cur_price) * float(price_multiplier), 4))
+    if sku_prices and hasattr(sim, "set_sku_price"):
+        for sku_id, new_price in sku_prices.items():
+            sim.set_sku_price(int(sku_id), float(new_price))
     sim.run(duration_seconds, dt=dt)
 
     tx_df = transactions_to_frame(sim.get_transactions())

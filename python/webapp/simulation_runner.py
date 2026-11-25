@@ -223,7 +223,7 @@ class SimulationRunner:
                 try:
                     ingestion_profile = extract_params(config.pos_data)
                     if config.spawn_interval == 5.0:
-                        config = config.copy(
+                        config = config.model_copy(
                             update={"spawn_interval": ingestion_profile["spawn_interval_seconds"]}
                         )
                 except Exception:

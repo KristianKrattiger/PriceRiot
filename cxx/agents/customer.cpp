@@ -112,7 +112,7 @@ bool Customer::update(const float dt, const StoreGraph &store, const Basket &bas
 
         case Decision::Despawn:
             // #region agent log
-            { AgentLogStream lf("c:\\Users\\krist\\Projects\\PriceRiot-main\\.cursor\\debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer.cpp:Despawn_handled\",\"message\":\"Despawn decision processed\",\"data\":{\"customerId\":" << getId() << ",\"prevEdgeIdx\":" << getCurrentEdgeIndex() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
+            { AgentLogStream lf("agent_debug.log", std::ios::app); if(lf) lf << "{\"hypothesisId\":\"D\",\"location\":\"customer.cpp:Despawn_handled\",\"message\":\"Despawn decision processed\",\"data\":{\"customerId\":" << getId() << ",\"prevEdgeIdx\":" << getCurrentEdgeIndex() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n"; }
             // #endregion
             setCurrentEdgeIndex(-1);
             return false;

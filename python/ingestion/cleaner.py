@@ -103,7 +103,7 @@ def load_and_clean(input_path: str, output_dir: Optional[str] = None) -> pd.Data
 
     # Derived columns
     clean["hour_of_day"] = clean["Date"].dt.hour
-    clean["day_of_week"] = clean["Date"].dt.dayofweek
+    clean["day_of_week"] = clean["Date"].dt.day_of_week
     clean["month"] = clean["Date"].dt.month
     clean["is_weekend"] = clean["day_of_week"].isin([5, 6])
 

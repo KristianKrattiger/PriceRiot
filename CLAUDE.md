@@ -251,21 +251,18 @@ Run after every C++ change. Add tests for new public API surface on the `simulat
 
 ## Current Status
 
-### Done
-- C++ engine: agents, shelves, restocking, transactions, navmesh, physics, queues
-- SFML/ImGui visualiser
-- `simulation` pybind11 module
-- Python analytics helpers (DataFrames, heatmaps, queue metrics)
-- Streamlit dashboard
-- FastAPI service + webapp
-- Ingestion pipeline (CSV cleaning, SKU mapping)
-- Smoke/systemic tests
+### Done (Project Completed)
+- C++17 engine: agents, shelves, worker movement & restocking, transactions, navmesh, physics, queues, price elasticity & `set_sku_price` / `get_sku_sell_through`
+- Optional headless CMake build (`-DBUILD_VISUALIZER=OFF` / `PRICERIOT_HEADLESS`) + SFML/ImGui visualiser
+- `simulation` pybind11 module (GIL-released `run()` / `step()` for multi-threaded sweeps and temporal multi-runs)
+- Python analytics helpers (DataFrames, heatmaps, queue metrics, temporal scheduler, `run_parameter_sweep`)
+- Streamlit dashboard & FastAPI + Vue 3 webapp (`POST /api/runs/{id}/workers`, `POST /api/sweeps`, temporal `/api/simulations`, layout editor, SQLite persistence)
+- POS ingestion pipeline (CSV cleaning, SKU mapping, parameter extraction)
+- Held-out POS calibration & price-elasticity evaluation (`scripts/evaluate_calibration.py` → `data/eval/CALIBRATION_REPORT.md`)
+- Full-stack test suite: `pytest -v tests/` (engine, pricing/workers, temporal, ingestion, sweeps, FastAPI API) and `npm test` (Vue 3 Vitest)
 
-### Planned / In Progress
-- Multi-threaded simulation for larger scenarios
-- ML models for churn prediction and demand forecasting
-- Layout and staffing optimisation loops
-- Optional streaming pipeline for real-time feeds
+### Out of Scope (Closed)
+- Automated layout optimization loop and built-in ML models (churn prediction, demand forecasting, staffing optimizer) are formally closed as out of scope (see `IMPLEMENTATION_STATUS.md`).
 
 ---
 

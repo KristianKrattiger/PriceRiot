@@ -99,7 +99,7 @@ class Database:
                     f.write(blob)
                 updates[attr] = path
         if updates:
-            result = result.copy(update=updates)
+            result = result.model_copy(update=updates)
         return result
 
     def _read_csv(self, path_or_blob: Optional[str]) -> Optional[str]:
@@ -159,7 +159,7 @@ class Database:
             existing = await self.async_get_run(run_id)
             if existing is None:
                 return None
-            updated = existing.copy(update=kwargs)
+            updated = existing.model_copy(update=kwargs)
             updated = self._write_csvs(run_id, updated)
             await self._db.execute(
                 "UPDATE runs SET data = ? WHERE run_id = ?",
@@ -248,6 +248,14 @@ class Database:
 
     def create_run_sync(self, config: RunConfig) -> str:
         return self._run_sync(self.create_run(config))
+
+    async def async_get_csv(self, run_id: str, kind: str) -> Optional[str]:
+        """Return CSV content for a completed run asynchronously (no event-loop deadlock)."""
+        result = await self.async_get_run(run_id)
+        if result is None:
+            return None
+        attr = "transactions_csv" if kind == "transactions" else "customers_csv"
+        return self._read_csv(getattr(result, attr))
 
     def get_csv(self, run_id: str, kind: str) -> Optional[str]:
         """Return CSV content for a completed run (reads from disk if needed)."""

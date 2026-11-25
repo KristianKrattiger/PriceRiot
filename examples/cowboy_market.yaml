@@ -353,82 +353,62 @@ edges:
 
 planogram:
   edges:
-    # Aisle 1 (z = -4): Cowboy foods
+    # Aisle 1 (z = -4): Cowboy Food (SKUs 1–10)
     "4":
       left_side:
-        bay_count: 1
+        bay_count: 2
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 11   # Chuckwagon Beans
-            on_shelf_qty: 25
+          - { bay: 0, face: 0, slot: 0, sku: 1,  on_shelf_qty: 25 }  # Chuckwagon Beans
+          - { bay: 0, face: 0, slot: 1, sku: 2,  on_shelf_qty: 25 }  # Campfire Chili
+          - { bay: 0, face: 0, slot: 2, sku: 3,  on_shelf_qty: 25 }  # Smoky BBQ Sauce
+          - { bay: 0, face: 0, slot: 3, sku: 4,  on_shelf_qty: 25 }  # Trail Beef Jerky
+          - { bay: 1, face: 0, slot: 0, sku: 5,  on_shelf_qty: 20 }  # Cornbread Mix
       right_side:
-        bay_count: 1
+        bay_count: 2
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 12   # Campfire Chili
-            on_shelf_qty: 25
+          - { bay: 0, face: 0, slot: 0, sku: 6,  on_shelf_qty: 20 }  # Campfire Coffee
+          - { bay: 0, face: 0, slot: 1, sku: 7,  on_shelf_qty: 20 }  # Prairie Honey
+          - { bay: 0, face: 0, slot: 2, sku: 8,  on_shelf_qty: 20 }  # Hardtack Biscuits
+          - { bay: 0, face: 0, slot: 3, sku: 9,  on_shelf_qty: 20 }  # Dried Apple Slices
+          - { bay: 1, face: 0, slot: 0, sku: 10, on_shelf_qty: 20 }  # Smoked Sausage Links
 
-    # Aisle 2 (z = 0): Cowboy foods + ranch supplies
+    # Aisle 2 (z = 0): Ranch Supplies (SKUs 11–18)
     "5":
       left_side:
         bay_count: 1
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 13   # Smoky BBQ Sauce
-            on_shelf_qty: 20
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 14   # Trail Beef Jerky
-            on_shelf_qty: 20
+          - { bay: 0, face: 0, slot: 0, sku: 11, on_shelf_qty: 20 }  # Lasso Rope
+          - { bay: 0, face: 0, slot: 1, sku: 12, on_shelf_qty: 20 }  # Horse Feed Sack
+          - { bay: 0, face: 0, slot: 2, sku: 13, on_shelf_qty: 20 }  # Saddle Oil
+          - { bay: 0, face: 0, slot: 3, sku: 14, on_shelf_qty: 25 }  # Work Gloves
       right_side:
         bay_count: 1
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 15   # Cornbread Mix
-            on_shelf_qty: 20
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 16   # Campfire Coffee
-            on_shelf_qty: 15
+          - { bay: 0, face: 0, slot: 0, sku: 15, on_shelf_qty: 15 }  # Fence Wire (50ft)
+          - { bay: 0, face: 0, slot: 1, sku: 16, on_shelf_qty: 20 }  # Hay Bale Twine
+          - { bay: 0, face: 0, slot: 2, sku: 17, on_shelf_qty: 15 }  # Stock Tank Float
+          - { bay: 0, face: 0, slot: 3, sku: 18, on_shelf_qty: 15 }  # Branding Iron
 
-    # Aisle 3 (z = +4): Ranch supplies and western apparel
+    # Aisle 3 (z = +4): Western Apparel, Rodeo Gear & Leather Goods (SKUs 19–30)
     "6":
       left_side:
-        bay_count: 1
+        bay_count: 2
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 17   # Lasso Rope
-            on_shelf_qty: 15
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 18   # Horse Feed Sack
-            on_shelf_qty: 15
+          - { bay: 0, face: 0, slot: 0, sku: 19, on_shelf_qty: 20 }  # Cowboy Hat
+          - { bay: 0, face: 0, slot: 1, sku: 20, on_shelf_qty: 15 }  # Cowboy Boots
+          - { bay: 0, face: 0, slot: 2, sku: 21, on_shelf_qty: 20 }  # Red Bandana
+          - { bay: 0, face: 0, slot: 3, sku: 22, on_shelf_qty: 20 }  # Flannel Shirt
+          - { bay: 1, face: 0, slot: 0, sku: 23, on_shelf_qty: 15 }  # Leather Belt
+          - { bay: 1, face: 0, slot: 1, sku: 24, on_shelf_qty: 15 }  # Denim Vest
       right_side:
-        bay_count: 1
+        bay_count: 2
         planogram:
-          - bay: 0
-            face: 0
-            slot: 0
-            sku: 21   # Cowboy Hat
-            on_shelf_qty: 15
-          - bay: 0
-            face: 0
-            slot: 1
-            sku: 22   # Cowboy Boots
-            on_shelf_qty: 10
+          - { bay: 0, face: 0, slot: 0, sku: 25, on_shelf_qty: 15 }  # Riding Spurs
+          - { bay: 0, face: 0, slot: 1, sku: 26, on_shelf_qty: 15 }  # Rodeo Rope
+          - { bay: 0, face: 0, slot: 2, sku: 27, on_shelf_qty: 15 }  # Bull Rope Rosin
+          - { bay: 0, face: 0, slot: 3, sku: 28, on_shelf_qty: 15 }  # Leather Saddlebag
+          - { bay: 1, face: 0, slot: 0, sku: 29, on_shelf_qty: 20 }  # Leather Wallet
+          - { bay: 1, face: 0, slot: 1, sku: 30, on_shelf_qty: 15 }  # Leather Journal
 
 checkout_queues:
   - register_id: 10

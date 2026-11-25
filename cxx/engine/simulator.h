@@ -36,10 +36,12 @@
 #include <cstdint>
 #include <deque>
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace priceriot {
@@ -83,6 +85,17 @@ struct WorkerMoodSample {
     float  time           = 0.0f;
     int    workerId       = 0;
     double taskEfficiency = 1.0;
+};
+
+/** Per-SKU sell-through and pricing snapshot for dynamic pricing hooks. */
+struct SkuSellThrough {
+    int         sku                = 0;
+    std::string name;
+    double      basePrice          = 0.0;
+    double      currentPrice       = 0.0;
+    int         unitsSold          = 0;
+    double      revenue            = 0.0;
+    double      sellThroughPerHour = 0.0;
 };
 
 /** Lightweight snapshot of a Worker for UI / analytics. */
@@ -169,6 +182,16 @@ class Simulator {
 
     /** Set RNG seed for reproducible runs. Call before run() or after reset(). */
     void setSeed(std::uint32_t seed)          { rng_.seed(seed);               }
+
+    // ── Dynamic Pricing & Sell-Through Hooks ─────────────────────────────────
+    /** Update the active shelf/checkout price for a catalog SKU (must be > 0). */
+    bool setSkuPrice(int sku, double newPrice);
+    /** Return current active price for a SKU (0.0 if unknown). */
+    [[nodiscard]] double getSkuPrice(int sku) const;
+    /** Return map of sku_id -> current price for all catalog SKUs. */
+    [[nodiscard]] std::map<int, double> getSkuPrices() const;
+    /** Return per-SKU sell-through counts, revenue, and units/hour rate. */
+    [[nodiscard]] std::vector<SkuSellThrough> getSkuSellThrough() const;
 
     /**
      * Configure staff pool and automatic task generation.
@@ -303,6 +326,10 @@ class Simulator {
     // Mission checkout log: snapshot (mission + basket) before basket clear. For UI.
     static constexpr size_t MISSION_CHECKOUT_LOG_MAX = 50;
     std::deque<MissionCheckoutSnapshot> missionCheckoutLog_;
+
+    // Per-SKU sell-through metrics (updated at checkout, cleared on reset).
+    std::unordered_map<int, int>    skuUnitsSold_;
+    std::unordered_map<int, double> skuRevenue_;
 };
 
 } // namespace priceriot

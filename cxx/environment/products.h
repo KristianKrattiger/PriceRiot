@@ -13,6 +13,7 @@ struct Product {
     std::string category;
     double price = 0.0;
     double popularity = 0.0;
+    double basePrice = 0.0;
 };
 
 // Simple product catalog wrapper
@@ -35,6 +36,7 @@ class Products {
     [[nodiscard]] Product getProduct(int sku) const;
     [[nodiscard]] std::string getProductCategory(int sku) const;
     [[nodiscard]] double getProductPrice(int sku) const;
+    [[nodiscard]] double getProductBasePrice(int sku) const;
     [[nodiscard]] double getProductPopularity(int sku) const;
 
     // Existence check
@@ -42,6 +44,7 @@ class Products {
 
     // Mutators
     bool updatePrice(int sku, double newPrice);
+    bool resetBasePrice(int sku, double newBasePrice);
     bool updateCategory(int sku, const std::string &newCategory);
     bool updatePopularity(int sku, double newPopularity);
 

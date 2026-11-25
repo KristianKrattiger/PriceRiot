@@ -93,14 +93,14 @@ Key rules:
 ### Build commands
 
 ```bash
-# Recommended: builds + runs smoke tests
-.\scripts\build_and_test.ps1      # Windows PowerShell
-./scripts/build_and_test.sh       # Linux/macOS
+# Recommended: builds + runs test suite
+.\scripts\build_and_test.ps1          # Windows PowerShell
+./scripts/build_and_test.sh           # Linux/macOS (full: visualizer + Python module)
+./scripts/build_and_test.sh --headless # Linux/macOS (Python module only, no SFML/ImGui)
 
-# Manual CMake (from repo root)
-mkdir build && cd build
-cmake ../cxx
-cmake --build . --config Release
+# Manual headless CMake (from repo root)
+cmake -S cxx -B build -DBUILD_VISUALIZER=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build build -j4
 ```
 
 Output: `build/` (single-config) or `build/Release/` (MSVC multi-config).
@@ -128,10 +128,18 @@ $env:PYTHONPATH = "build;python"
 
 ImGui controls: pause/resume, time scale, spawn interval, stats overlay, navmesh/physics debug views.
 
-### Smoke tests
+### Tests & Calibration Evaluation
 
 ```bash
-PYTHONPATH=build:python python tests/test_simulation.py
+# Python + C++/pybind11 engine, ETL, sweeps, and FastAPI backend tests
+PYTHONPATH=build:python:. pytest -v tests/
+
+# Vue 3 frontend tests (Vitest)
+cd python/webapp/frontend && npm test
+
+# Held-out POS calibration & controlled price-elasticity evaluation
+# Outputs: data/eval/calibration_cowboy_holdout.json and data/eval/CALIBRATION_REPORT.md
+PYTHONPATH=build:python:. python scripts/evaluate_calibration.py
 ```
 
 ### Analytics CLI
@@ -234,55 +242,25 @@ queue_df = analytics.queue_metrics_to_frame(times, lengths)
 
 | Component | Notes |
 |---|---|
-| FastAPI backend | `POST /api/runs` (upload + stream), run listing/detail, CSV + KPI export, comparison engine |
+| FastAPI backend | `POST /api/runs` (upload + stream), `POST /api/runs/{id}/workers`, run listing/detail, CSV + KPI export, comparison engine |
+| Parameter sweeps | `POST /api/sweeps`, `GET /api/sweeps/{id}`, CSV export (`python/analytics/sweeps.py`, `sweep_runner.py`) |
+| Dynamic pricing | C++ customer price elasticity + `set_sku_price()` / `get_sku_prices()` / `get_sku_sell_through()` pybind11 hooks |
 | Temporal jobs | `POST /api/simulations` (202) and job/status/results endpoints for multi-day / batch workflows (`sim_runner`, `sim_storage`) |
-| SQLite persistence | Runs in `data/priceriot.db`; large CSVs under `data/runs/{id}/`; survives restarts |
+| SQLite persistence | Runs, temporal jobs, and sweeps in `data/priceriot.db`; large CSVs under `data/runs/{id}/`; survives restarts |
 | `DELETE /api/runs/{id}` | Removes run record and cleans up on-disk CSV artifacts |
 | `GET /api/runs/{id}/profile` | POS-derived ingestion summary when a POS file backed the run |
-| Vue 3 frontend | Tabs: **Run** (datasets, YAML, sim config), **Results**, **Compare**, **Layout** (canvas + YAML export) |
+| Vue 3 frontend | Tabs: **Run** (datasets, YAML, sim config), **Results**, **Compare**, **Layout** (canvas + YAML export) + Vitest test suite |
+| Calibration eval | Leakage-free 21d→7d held-out POS evaluation + controlled pricing elasticity report in `data/eval/CALIBRATION_REPORT.md` |
 | Ingestion profile | Spawn interval / basket hints from POS; `IngestionProfile.vue` and run-time `extract_params` |
 | Streamlit dashboard | Simulation controls + charts, POS analysis mode |
 | Jupyter notebooks | End-to-end examples: transactions, heatmaps, queue time-series |
 
-### Incomplete / in progress
+### Out of Scope (Closed)
 
-| Component | Gap |
-|---|---|
-| Unit tests | Only smoke/integration tests; no per-module unit tests |
-| Queued-run staff edits | Plan called for `POST /api/runs/{id}/workers`; staff counts are set at creation today (see **IMPLEMENTATION_STATUS.md** Phase 6) |
+The following deferred ideas from early planning are formally **out of scope** for PriceRiot v1 (see **[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)**):
 
----
-
-## Roadmap
-
-Priority order — each item tends to unblock the next.
-
-### P3 — Simulation fidelity
-
-**7. Demand-responsive pricing hook**
-- Track SKU sell-through rate per simulation window
-- Expose `set_sku_price(sku_id, price)` so an outer optimization loop can test dynamic pricing
-
-**8. Multi-run parameter sweeps**
-- `POST /api/sweeps` accepting a parameter grid (spawn_interval × mission_probability × num_stockers)
-- Run simulations in a thread pool; aggregate into a comparison DataFrame
-
-**9. Layout optimisation hook**
-- Expose an objective function (revenue/sqft, mean dwell time, queue p95) that an external optimizer can minimize by mutating `store.yaml` and re-running
-
-### P4 — ML integration
-
-**10. Churn prediction**
-- `customers_df` already has all features (loyalty, recency, frequency, income, family size)
-- Train a gradient-boosted classifier on synthetic data; expose via `/predict/churn`
-
-**11. Demand forecasting**
-- SKU sales time-series from repeated runs → ARIMA or Prophet baseline
-- Feed forecast back into restock thresholds for task generation
-
-**12. Staffing optimizer**
-- Binary-search over `num_cashiers` with repeated runs to meet a target queue p95 SLA
-- Expose as a one-click action in the webapp
+- Automated layout mutation / optimization loop (P3.9) — external callers can already mutate `store.yaml` and evaluate via `POST /api/sweeps` or `analytics.run_parameter_sweep()`.
+- Built-in ML models for churn prediction, demand forecasting, and staffing optimization (P4.10–4.12) — PriceRiot exports clean synthetic transaction and customer CSVs for downstream ML pipelines rather than bundling model training inside the simulator repo.
 
 ---
 

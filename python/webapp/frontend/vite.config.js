@@ -3,6 +3,11 @@ import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
   plugins: [vue()],
+  css: process.env.VITEST ? { postcss: { plugins: [] } } : undefined,
+  test: {
+    environment: "jsdom",
+    css: false
+  },
   server: {
     port: 5173,
     proxy: {

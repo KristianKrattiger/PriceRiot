@@ -1,0 +1,205 @@
+{
+  "as_of": "2026-11-25",
+  "git_sha": "2870b22",
+  "system": "PriceRiot C++17 Simulator + pybind11 + python/ingestion/param_extractor.py + python/analytics/temporal.py",
+  "command": "PYTHONPATH=build:python:. .venv/bin/python scripts/evaluate_calibration.py",
+  "calibration_holdout": {
+    "dataset": "data/raw/cowboy_pos.csv",
+    "dataset_sha256": "5285eb62c4d1c50bee70be5e68276899a564b16409c42df2ad3cb43ae85ba245",
+    "store_yaml": "examples/cowboy_market.yaml",
+    "synthetic": true,
+    "synthetic_note": "cowboy_pos.csv was generated analytically by scripts/generate_pos_data.py",
+    "split": {
+      "train_range": "2024-01-01..2024-01-21",
+      "train_pos_days": 21,
+      "train_transactions": 1599,
+      "test_range": "2024-01-22..2024-01-28",
+      "test_pos_days_all": 7,
+      "test_transactions_all": 532,
+      "test_yaml_open_days": 6,
+      "test_transactions_yaml_open": 466,
+      "schedule_mismatch_note": "cowboy_pos.csv includes Sunday 2024-01-28 (7 days/wk), whereas examples/cowboy_market.yaml declares days_of_operation: [Mon..Sat] (6 days/wk). Both full-week (7d) and schedule-matched (6d Mon-Sat) denominators are reported."
+    },
+    "fitted_params_train_only": {
+      "spawn_interval_seconds": 449.13,
+      "transaction_count": 1599,
+      "avg_basket_value": 94.55
+    },
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "n_seeds": 5,
+    "heldout_actual_all_7d": {
+      "days": 7,
+      "total_transactions": 532,
+      "mean_daily_transactions": 76.0,
+      "total_revenue": 49326.64,
+      "avg_basket_value": 92.72,
+      "avg_items_per_basket": 5.24
+    },
+    "heldout_actual_matched_6d": {
+      "days": 6,
+      "total_transactions": 466,
+      "mean_daily_transactions": 77.67,
+      "total_revenue": 42932.73,
+      "avg_basket_value": 92.13,
+      "avg_items_per_basket": 5.21,
+      "period_shares": {
+        "morning": 0.1159,
+        "midday": 0.2639,
+        "evening": 0.4056,
+        "close": 0.2146
+      },
+      "top10_skus": [
+        4,
+        19,
+        1,
+        10,
+        3,
+        20,
+        14,
+        25,
+        5,
+        2
+      ]
+    },
+    "simulated_mean_across_seeds": {
+      "simulated_open_days": 6,
+      "total_transactions_mean": 451.0,
+      "total_transactions_std": 12.63,
+      "total_revenue_mean": 44663.52,
+      "total_revenue_std": 2761.38,
+      "avg_basket_value_mean": 98.99,
+      "avg_basket_value_std": 4.38,
+      "avg_items_per_basket_mean": 4.65,
+      "avg_items_per_basket_std": 0.12,
+      "period_shares_mean": {
+        "morning": 0.0975,
+        "midday": 0.273,
+        "evening": 0.3927,
+        "close": 0.2368
+      }
+    },
+    "scores": {
+      "matched_6d_total_transactions_rel_error_pct": -3.22,
+      "matched_6d_daily_transactions_mape_pct": 12.2,
+      "matched_6d_total_revenue_rel_error_pct": 4.03,
+      "matched_6d_avg_basket_value_rel_error_pct": 7.45,
+      "matched_6d_avg_items_per_basket_rel_error_pct": -10.71,
+      "all_7d_total_transactions_rel_error_pct": -15.23,
+      "all_7d_daily_transactions_mape_pct": 24.75,
+      "all_7d_total_revenue_rel_error_pct": -9.45,
+      "intraday_period_tvd_mean": 0.0325,
+      "sku_mix_cosine_similarity_mean": 0.765,
+      "sku_mix_js_divergence_bits_mean": 0.0915,
+      "sku_top10_overlap_mean": 0.38
+    },
+    "per_seed": [
+      {
+        "seed": 42,
+        "total_transactions": 456,
+        "total_revenue": 47476.45,
+        "avg_basket_value": 104.12,
+        "avg_items_per_basket": 4.73
+      },
+      {
+        "seed": 43,
+        "total_transactions": 433,
+        "total_revenue": 42624.88,
+        "avg_basket_value": 98.44,
+        "avg_items_per_basket": 4.65
+      },
+      {
+        "seed": 44,
+        "total_transactions": 460,
+        "total_revenue": 44220.59,
+        "avg_basket_value": 96.13,
+        "avg_items_per_basket": 4.76
+      },
+      {
+        "seed": 45,
+        "total_transactions": 443,
+        "total_revenue": 41482.79,
+        "avg_basket_value": 93.64,
+        "avg_items_per_basket": 4.45
+      },
+      {
+        "seed": 46,
+        "total_transactions": 463,
+        "total_revenue": 47512.89,
+        "avg_basket_value": 102.62,
+        "avg_items_per_basket": 4.67
+      }
+    ]
+  },
+  "pricing_elasticity": {
+    "store_yaml": "examples/cowboy_market.yaml",
+    "target_skus": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "duration_seconds": 1800.0,
+    "spawn_interval": 15.0,
+    "mission_probability": 0.5,
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "n_seeds": 5,
+    "synthetic": true,
+    "by_multiplier": [
+      {
+        "price_multiplier": 0.75,
+        "target_units_mean": 130.0,
+        "target_units_std": 10.37,
+        "target_revenue_mean": 322.35,
+        "control_units_mean": 368.0,
+        "arc_elasticity_vs_baseline": -0.414
+      },
+      {
+        "price_multiplier": 1.0,
+        "target_units_mean": 117.8,
+        "target_units_std": 9.76,
+        "target_revenue_mean": 399.72,
+        "control_units_mean": 385.0,
+        "arc_elasticity_vs_baseline": null
+      },
+      {
+        "price_multiplier": 1.5,
+        "target_units_mean": 62.4,
+        "target_units_std": 6.47,
+        "target_revenue_mean": 318.12,
+        "control_units_mean": 387.8,
+        "arc_elasticity_vs_baseline": -0.941
+      },
+      {
+        "price_multiplier": 2.0,
+        "target_units_mean": 35.8,
+        "target_units_std": 6.98,
+        "target_revenue_mean": 239.48,
+        "control_units_mean": 364.2,
+        "arc_elasticity_vs_baseline": -0.696
+      },
+      {
+        "price_multiplier": 3.0,
+        "target_units_mean": 9.4,
+        "target_units_std": 2.3,
+        "target_revenue_mean": 107.12,
+        "control_units_mean": 390.8,
+        "arc_elasticity_vs_baseline": -0.46
+      }
+    ],
+    "monotonic_non_increasing": true,
+    "strict_drop_on_hikes": true
+  }
+}

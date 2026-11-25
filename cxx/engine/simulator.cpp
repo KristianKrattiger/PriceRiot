@@ -181,6 +181,8 @@ void Simulator::reset() {
     queueSampleTimes_.clear();
     queueLengthsHistory_.clear();
     missionCheckoutLog_.clear();
+    skuUnitsSold_.clear();
+    skuRevenue_.clear();
 
     loadStore();
 }
@@ -197,6 +199,49 @@ std::vector<std::shared_ptr<Customer>> Simulator::getCustomers() const {
 size_t Simulator::getTransactionCount() const {
     std::lock_guard<std::mutex> lk(transactionMutex_);
     return completedTransactions_.size();
+}
+
+bool Simulator::setSkuPrice(int sku, double newPrice) {
+    if (newPrice <= 0.0 || !store_.catalog.productExists(sku))
+        return false;
+    return store_.catalog.updatePrice(sku, newPrice);
+}
+
+double Simulator::getSkuPrice(int sku) const {
+    if (!store_.catalog.productExists(sku))
+        return 0.0;
+    return store_.catalog.getProductPrice(sku);
+}
+
+std::map<int, double> Simulator::getSkuPrices() const {
+    std::map<int, double> out;
+    for (const auto &[sku, prod] : store_.catalog.getProductsMap()) {
+        out[sku] = prod.price;
+    }
+    return out;
+}
+
+std::vector<SkuSellThrough> Simulator::getSkuSellThrough() const {
+    std::lock_guard<std::mutex> lk(transactionMutex_);
+    std::vector<SkuSellThrough> out;
+    const auto &catalogMap = store_.catalog.getProductsMap();
+    out.reserve(catalogMap.size());
+    const double hours = elapsedTime_ > 0.0f ? (static_cast<double>(elapsedTime_) / 3600.0) : 0.0;
+
+    for (const auto &[sku, prod] : catalogMap) {
+        SkuSellThrough st;
+        st.sku          = sku;
+        st.name         = prod.name;
+        st.basePrice    = prod.basePrice > 0.0 ? prod.basePrice : prod.price;
+        st.currentPrice = prod.price;
+        if (auto it = skuUnitsSold_.find(sku); it != skuUnitsSold_.end())
+            st.unitsSold = it->second;
+        if (auto it = skuRevenue_.find(sku); it != skuRevenue_.end())
+            st.revenue = it->second;
+        st.sellThroughPerHour = hours > 0.0 ? (static_cast<double>(st.unitsSold) / hours) : 0.0;
+        out.push_back(std::move(st));
+    }
+    return out;
 }
 
 void Simulator::exportTransactions(const std::string &path) const {
@@ -614,6 +659,10 @@ void Simulator::finalizeCheckout(CustomerVisit &agent) {
 
     {
         std::lock_guard<std::mutex> lk(transactionMutex_);
+        for (const auto &item : tx.getItems()) {
+            skuUnitsSold_[item.id] += item.quantity;
+            skuRevenue_[item.id]   += item.total;
+        }
         completedTransactions_.push_back(std::move(tx));
     }
 

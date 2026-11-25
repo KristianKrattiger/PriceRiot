@@ -423,6 +423,33 @@ PYBIND11_MODULE(simulation, m) {
              "Set the RNG seed for reproducible runs (uint32). "
              "Call before run() or after reset() to get repeatable results.\n")
 
+        // ── Dynamic pricing & sell-through ───────────────────────────────────
+        .def("set_sku_price", &Simulator::setSkuPrice,
+             py::arg("sku_id"),
+             py::arg("price"),
+             "Update the active price for *sku_id* (must be > 0). "
+             "Returns True if the SKU exists in the catalog, False otherwise.\n")
+        .def("get_sku_price", &Simulator::getSkuPrice,
+             py::arg("sku_id"),
+             "Return the current active price for *sku_id* (0.0 if unknown).\n")
+        .def("get_sku_prices", &Simulator::getSkuPrices,
+             "Return a dict mapping sku_id -> current price for all catalog SKUs.\n")
+        .def("get_sku_sell_through", [](const Simulator &s) {
+            py::list out;
+            for (const auto &st : s.getSkuSellThrough()) {
+                py::dict d;
+                d["sku"]                   = st.sku;
+                d["name"]                  = st.name;
+                d["base_price"]            = st.basePrice;
+                d["current_price"]         = st.currentPrice;
+                d["units_sold"]            = st.unitsSold;
+                d["revenue"]               = st.revenue;
+                d["sell_through_per_hour"] = st.sellThroughPerHour;
+                out.append(std::move(d));
+            }
+            return out;
+        }, "Return per-SKU pricing and sell-through metrics as a list of dicts.\n")
+
         // ── Read-only properties ───────────────────────────────────────────────
         .def_property_readonly("elapsed_time",
              &Simulator::getElapsedTime,

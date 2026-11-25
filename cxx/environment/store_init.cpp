@@ -75,9 +75,7 @@ std::unordered_map<std::string, int> load_products_from_yaml(const YAML::Node &r
 
         // Upsert into catalog
         if (catalog.productExists(sku_int)) {
-            catalog.updateCategory(sku_int, category);
-            catalog.updatePrice(sku_int, price);
-            catalog.updatePopularity(sku_int, pop);
+            catalog.addProduct(sku_int, name, price, category, pop);
         } else {
             catalog.addProduct(sku_int, name, price, category, pop);
         }
@@ -154,13 +152,7 @@ std::unordered_map<std::string, int> load_products_from_csv(const std::string &c
             try { pop = std::stod(trim(field)); } catch (...) {}
         }
 
-        if (catalog.productExists(sku_int)) {
-            catalog.updatePrice(sku_int, price);
-            catalog.updatePopularity(sku_int, pop);
-            catalog.updateCategory(sku_int, category);
-        } else {
-            catalog.addProduct(sku_int, name, price, category, pop);
-        }
+        catalog.addProduct(sku_int, name, price, category, pop);
     }
     return totals_by_sku;
 }

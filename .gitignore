@@ -20,12 +20,16 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.pytest_cache/
 env/
 venv/
 ENV/
 .venv
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Node
+node_modules/
 
 # IDE files
 .idea/

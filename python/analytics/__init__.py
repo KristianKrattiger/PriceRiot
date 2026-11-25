@@ -22,6 +22,7 @@ from .orchestrator import (
     SimRun,
     SimRunOutput,
 )
+from .sweeps import run_parameter_sweep
 
 __all__ = [
     # core
@@ -45,5 +46,7 @@ __all__ = [
     "SimRun",
     "SimRunOutput",
     "AggregateSummary",
+    # sweeps
+    "run_parameter_sweep",
 ]
 

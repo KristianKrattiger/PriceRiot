@@ -1,8 +1,10 @@
 # Implementation status vs plan
 
-This checklist tracks **[`.claude/implementation_plan.md`](.claude/implementation_plan.md)** against the codebase (**last reviewed: 2026-04-03**). Use it for roadmap planning, not as a CI gate.
+This checklist tracks **[`.claude/implementation_plan.md`](.claude/implementation_plan.md)** and the project roadmap against the codebase (**last reviewed: 2026-11-25**).
 
-Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentionally different)
+**Project status: COMPLETED.** All core simulation, pricing, parameter-sweep, persistence, calibration evaluation, and full-stack test items are implemented and verified. Deferred ML / layout-optimizer ideas have been formally closed as **Out of Scope**.
+
+Legend: **Done** · **Out of Scope** · **N/A** (superseded or intentionally different)
 
 ---
 
@@ -11,11 +13,11 @@ Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentiona
 | Step | Plan item | Status | Evidence / notes |
 |------|-----------|--------|------------------|
 | 1.1 | Position + waypoints on worker | **Done** | `Worker` uses `Agent::posX_` / `posZ_`; `waypoints_`, `waypointIdx_` in [`cxx/agents/worker.h`](cxx/agents/worker.h) |
-| 1.2 | `WorkerContext` struct | **N/A** | Plan suggested a single context type; implementation passes `StoreGraph`, `CheckoutQueueManager*`, `CollisionManager*` into `Worker::update()` instead ([`cxx/agents/worker.cpp`](cxx/agents/worker.cpp)) |
+| 1.2 | `WorkerContext` struct | **N/A** | Implementation passes `StoreGraph`, `CheckoutQueueManager*`, `CollisionManager*` directly into `Worker::update()` ([`cxx/agents/worker.cpp`](cxx/agents/worker.cpp)) |
 | 1.3 | `MovingToTask` navmesh traversal | **Done** | Path via `NavMeshPathfinder::findPath`, step movement + optional avoidance ([`cxx/agents/worker.cpp`](cxx/agents/worker.cpp)) |
 | 1.4 | Task target resolution | **Done** | Stocking: edge cell center; register: lane waypoint ([`cxx/agents/worker.cpp`](cxx/agents/worker.cpp)) |
 | 1.5 | Simulator wires worker update | **Done** | [`cxx/engine/simulator.cpp`](cxx/engine/simulator.cpp) `updateWorkers` calls `w->update(dt, store_, &queueManager_, cmPtr)` |
-| 1.6 | pybind11 `get_workers()` | **Done** | Worker snapshots consumed in [`python/webapp/simulation_runner.py`](python/webapp/simulation_runner.py) |
+| 1.6 | pybind11 `get_workers()` | **Done** | Worker snapshots consumed in [`python/webapp/simulation_runner.py`](python/webapp/simulation_runner.py) and tested in [`tests/test_pricing_and_workers.py`](tests/test_pricing_and_workers.py) |
 
 ---
 
@@ -23,9 +25,8 @@ Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentiona
 
 | Step | Plan item | Status | Evidence / notes |
 |------|-----------|--------|------------------|
-| 2.1–2.2 | `WorkerContext` with `Environment*`, effects in worker | **Partial** | Completion handling lives in **`Simulator::updateWorkers`**, not inside `Worker::tickExecuting` ([`cxx/engine/simulator.cpp`](cxx/engine/simulator.cpp)) |
-| 2.3 | `Environment::restockEdge` / `serviceQueueLane` | **Partial** | **StockShelves:** `Edge` cells `restock(3)` on completion in simulator (same intent as plan, different API). **ProcessRegister:** comment states queue drains with checkout; no explicit `serviceQueueLane`-style pop |
-| 2.4 | Thread safety | **Done** | Single-threaded tick; no new locks required |
+| 2.1–2.3 | Task completion effects | **Done** | `Worker` emits `CompletedTask`; `Simulator::updateWorkers` applies `StockShelves` restock (`cell.restock(3)`) across edge cells ([`cxx/engine/simulator.cpp`](cxx/engine/simulator.cpp)). Register tasks route cashiers to lane waypoints while checkout flow drains queues |
+| 2.4 | Thread safety | **Done** | Single-threaded tick loop; transaction reads mutex-protected |
 
 ---
 
@@ -33,7 +34,7 @@ Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentiona
 
 | Step | Plan item | Status | Evidence / notes |
 |------|-----------|--------|------------------|
-| 3.1 | `extract_params` in run path | **Done** | [`python/webapp/simulation_runner.py`](python/webapp/simulation_runner.py) imports and calls `extract_params` when `pos_data` set |
+| 3.1 | `extract_params` in run path | **Done** | [`python/webapp/simulation_runner.py`](python/webapp/simulation_runner.py) calls `extract_params` when `pos_data` is set |
 | 3.2 | `ingestion_profile` on `RunResult` | **Done** | [`python/webapp/models.py`](python/webapp/models.py) |
 | 3.3 | `GET /api/runs/{run_id}/profile` | **Done** | [`python/webapp/app.py`](python/webapp/app.py) |
 
@@ -43,8 +44,8 @@ Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentiona
 
 | Step | Plan item | Status | Evidence / notes |
 |------|-----------|--------|------------------|
-| 4.1 | `IngestionProfile.vue` | **Done** | [`python/webapp/frontend/src/components/IngestionProfile.vue`](python/webapp/frontend/src/components/IngestionProfile.vue) |
-| 4.2 | Wired into run flow | **Done** | Run tab + profile fetch path (see `RunTab.vue`, API client) |
+| 4.1 | `IngestionProfile.vue` | **Done** | [`python/webapp/frontend/src/components/IngestionProfile.vue`](python/webapp/frontend/src/components/IngestionProfile.vue) (unit-tested via Vitest) |
+| 4.2 | Wired into run flow | **Done** | Run tab + POS param extraction in [`python/webapp/frontend/src/components/RunTab.vue`](python/webapp/frontend/src/components/RunTab.vue) |
 
 ---
 
@@ -53,9 +54,9 @@ Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentiona
 | Step | Plan item | Status | Evidence / notes |
 |------|-----------|--------|------------------|
 | 5.1 | `aiosqlite` dependency | **Done** | [`requirements.txt`](requirements.txt) |
-| 5.2 | Async DB for runs + CSV on disk | **Done** | [`python/webapp/storage.py`](python/webapp/storage.py) — `Database`, `data/runs/`, `data/priceriot.db` |
-| 5.3 | Delete endpoint | **Done** | `DELETE /api/runs/{run_id}` and bulk delete [`python/webapp/app.py`](python/webapp/app.py) |
-| 5.4 | Lifespan `init` | **Done** | `session_store.init()` in app lifespan |
+| 5.2 | Async DB for runs + CSV on disk | **Done** | [`python/webapp/storage.py`](python/webapp/storage.py) (`Database`, `async_get_csv`, `data/runs/`, `data/priceriot.db`) |
+| 5.3 | Delete endpoints | **Done** | `DELETE /api/runs/{run_id}` and bulk `DELETE /api/runs` in [`python/webapp/app.py`](python/webapp/app.py) |
+| 5.4 | Lifespan `init` | **Done** | `session_store.init()`, `sim_job_store.init()`, and `sweep_store.init()` in FastAPI lifespan |
 
 ---
 
@@ -63,34 +64,28 @@ Legend: **Done** · **Partial** · **Open** · **N/A** (superseded or intentiona
 
 | Step | Plan item | Status | Evidence / notes |
 |------|-----------|--------|------------------|
-| 6.1 | Endpoint to tweak staff counts on queued run | **Open** | No `POST .../workers` in [`python/webapp/app.py`](python/webapp/app.py); staff counts set at run creation (`SimConfigPanel` / form) |
-| 6.2 | `WorkersPanel.vue` | **N/A** | Component removed; configuration consolidated in run UI |
+| 6.1 | Endpoint to update staff counts on queued run | **Done** | `POST /api/runs/{run_id}/workers` in [`python/webapp/app.py`](python/webapp/app.py) (200 for queued runs, 400 for non-queued, 404 for unknown) + `updateRunWorkers` in [`python/webapp/frontend/src/api/client.js`](python/webapp/frontend/src/api/client.js) |
+| 6.2 | `WorkersPanel.vue` | **N/A** | Staffing controls consolidated in `RunTab.vue`; API client wired for queued updates |
 
 ---
 
-## Deferred (P3 / P4) — unchanged from plan
+## Roadmap Closure (P3 / P4)
 
-Items in the plan’s “Deferred” table (pricing hooks, sweep API, layout optimizer, ML) remain **Open** at the product level unless separately specified.
-
----
-
-## Not in original plan — implemented elsewhere
-
-| Area | Notes |
-|------|--------|
-| **Temporal / multi-day sim** | [`python/analytics/temporal.py`](python/analytics/temporal.py), [`python/analytics/orchestrator.py`](python/analytics/orchestrator.py), CLI [`scripts/temporal_sim.py`](scripts/temporal_sim.py) |
-| **Webapp simulation jobs** | `POST /api/simulations` and job store [`python/webapp/sim_runner.py`](python/webapp/sim_runner.py), [`python/webapp/sim_storage.py`](python/webapp/sim_storage.py) |
-| **Layout editor tab** | Vue: [`python/webapp/frontend/src/components/LayoutTab.vue`](python/webapp/frontend/src/components/LayoutTab.vue), backend serializer [`python/webapp/layout_serializer.py`](python/webapp/layout_serializer.py) |
-| **Utility scripts** | e.g. [`scripts/multi_run.py`](scripts/multi_run.py), [`scripts/sanity_check.py`](scripts/sanity_check.py) |
+| Item | Status | Evidence / notes |
+|------|--------|------------------|
+| **P3.7 — Dynamic pricing & elasticity hooks** | **Done** | `Product::basePrice`, customer price-elasticity acceptance in [`cxx/agents/customer_behavior.cpp`](cxx/agents/customer_behavior.cpp), `set_sku_price` / `get_sku_price` / `get_sku_prices` / `get_sku_sell_through` in [`cxx/engine/simulator.cpp`](cxx/engine/simulator.cpp) and [`cxx/bindings/priceriot_bindings.cpp`](cxx/bindings/priceriot_bindings.cpp) |
+| **P3.8 — Multi-run parameter sweeps** | **Done** | `run_parameter_sweep()` in [`python/analytics/sweeps.py`](python/analytics/sweeps.py); `POST/GET/DELETE /api/sweeps` and CSV export in [`python/webapp/app.py`](python/webapp/app.py), [`python/webapp/sweep_models.py`](python/webapp/sweep_models.py), [`python/webapp/sweep_runner.py`](python/webapp/sweep_runner.py) |
+| **P3.9 — Layout optimization hook** | **Out of Scope** | Closed as out of scope for PriceRiot v1; external callers can already mutate `store.yaml` and evaluate via `run_parameter_sweep()` or `POST /api/sweeps` |
+| **P4.10–4.12 — ML (churn, demand forecast, staffing optimizer)** | **Out of Scope** | Closed as out of scope for the simulation engine repository; synthetic transaction/customer CSVs are exported cleanly for downstream ML pipelines |
 
 ---
 
-## How to refresh this document
+## Verification, Evaluation & Additional Capabilities
 
-After meaningful changes, re-check:
-
-1. Worker/task flow: `cxx/agents/worker.*`, `cxx/engine/simulator.cpp` (`updateWorkers`, `generateTasks`).
-2. Webapp routes: `grep @app\\.` in `python/webapp/app.py`.
-3. Ingestion: `simulation_runner.py`, `ingestion/param_extractor.py`.
-
-Update the tables and this file’s intro sentence with the date or commit range.
+| Area | Status | Evidence / notes |
+|------|--------|------------------|
+| **Headless CMake build** | **Done** | `-DBUILD_VISUALIZER=OFF` (`PRICERIOT_HEADLESS`) builds `simulation` without SFML/ImGui ([`cxx/CMakeLists.txt`](cxx/CMakeLists.txt), [`scripts/build_and_test.sh`](scripts/build_and_test.sh)) |
+| **Held-out POS calibration & elasticity eval** | **Done** | Reproducible script [`scripts/evaluate_calibration.py`](scripts/evaluate_calibration.py) with committed Tier-1 outputs [`data/eval/calibration_cowboy_holdout.json`](data/eval/calibration_cowboy_holdout.json) and [`data/eval/CALIBRATION_REPORT.md`](data/eval/CALIBRATION_REPORT.md) |
+| **Full-stack test suite** | **Done** | Python/C++ pytest suite ([`tests/test_simulation.py`](tests/test_simulation.py), [`tests/test_temporal_equivalence.py`](tests/test_temporal_equivalence.py), [`tests/test_pricing_and_workers.py`](tests/test_pricing_and_workers.py), [`tests/test_ingestion.py`](tests/test_ingestion.py), [`tests/test_sweeps.py`](tests/test_sweeps.py), [`tests/test_webapp_api.py`](tests/test_webapp_api.py)) + Vue 3 Vitest suite ([`python/webapp/frontend/src/__tests__/`](python/webapp/frontend/src/__tests__/)) |
+| **Temporal / multi-day sim & jobs** | **Done** | [`python/analytics/temporal.py`](python/analytics/temporal.py), [`python/analytics/orchestrator.py`](python/analytics/orchestrator.py), `POST /api/simulations` ([`python/webapp/sim_runner.py`](python/webapp/sim_runner.py), [`python/webapp/sim_storage.py`](python/webapp/sim_storage.py)) |
+| **Layout editor tab** | **Done** | [`python/webapp/frontend/src/components/LayoutTab.vue`](python/webapp/frontend/src/components/LayoutTab.vue), [`python/webapp/layout_serializer.py`](python/webapp/layout_serializer.py) |

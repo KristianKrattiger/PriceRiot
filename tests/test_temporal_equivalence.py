@@ -213,6 +213,30 @@ def test_n_runs_output_directories():
         assert len(agg["runs"]) == 3
 
 
+def test_full_day_runs_all_intraday_periods():
+    """Regression test: multi-period days must advance through evening and close."""
+    from python.analytics.temporal import run_temporal_simulation
+
+    cfg = SimulationRangeConfig(
+        store_yaml=STORE,
+        start_date=date(2024, 1, 1),   # Mon 09:00-19:00 (4 periods)
+        end_date=date(2024, 1, 1),
+        base_spawn_interval=120.0,
+        mission_probability=0.5,
+        seed=42,
+        dt=1.0,
+    )
+    res = run_temporal_simulation(cfg, verbose=False)
+    assert not res.transactions.empty
+    # Timestamps are HH:MM:SS relative to store open (09:00); evening starts at +05:00:00
+    hours_since_open = res.transactions["timestamp"].map(
+        lambda s: int(str(s).split(":")[0]) + int(str(s).split(":")[1]) / 60.0
+    )
+    assert hours_since_open.max() >= 7.0, (
+        f"Expected transactions in evening/close (>=7h after open), max was {hours_since_open.max():.2f}h"
+    )
+
+
 # ── Standalone runner ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

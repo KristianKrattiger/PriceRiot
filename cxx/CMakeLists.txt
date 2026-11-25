@@ -8,49 +8,54 @@ cmake_policy(SET CMP0169 OLD)
 
 include(FetchContent)
 
-# --- 1. Fetch YAML-CPP ---
+option(BUILD_VISUALIZER "Build the SFML/ImGui desktop visualizer" ON)
+
+# --- 1. YAML-CPP (system or FetchContent) ---
 set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-        yaml-cpp
-        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-        GIT_TAG 0.8.0
-)
-FetchContent_MakeAvailable(yaml-cpp)
-
-# --- 2. Fetch SFML ---
-FetchContent_Declare(
-        SFML
-        GIT_REPOSITORY https://github.com/SFML/SFML.git
-        GIT_TAG 2.6.1
-)
-FetchContent_MakeAvailable(SFML)
-
-# --- 3. Fetch Dear ImGui ---
-FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG v1.89.9
-)
-FetchContent_GetProperties(imgui)
-if(NOT imgui_POPULATED)
-    FetchContent_Populate(imgui)
+find_package(yaml-cpp QUIET)
+if(NOT yaml-cpp_FOUND)
+    FetchContent_Declare(
+            yaml-cpp
+            GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+            GIT_TAG 0.8.0
+    )
+    FetchContent_MakeAvailable(yaml-cpp)
+    # yaml-cpp 0.8.0 omits <cstdint> in emitterutils.cpp, which fails on GCC 15+/16+
+    if(TARGET yaml-cpp AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(yaml-cpp PRIVATE -include cstdint)
+    endif()
 endif()
 
-# --- 4. Fetch ImGui-SFML ---
-set(IMGUI_DIR ${imgui_SOURCE_DIR})
+# --- 2-4. SFML, Dear ImGui, ImGui-SFML (visualizer only) ---
+if(BUILD_VISUALIZER)
+    FetchContent_Declare(
+            SFML
+            GIT_REPOSITORY https://github.com/SFML/SFML.git
+            GIT_TAG 2.6.1
+    )
+    FetchContent_MakeAvailable(SFML)
 
-# !!! CRITICAL FIX !!!
-# We tell ImGui-SFML NOT to try to find_package(SFML),
-# because we already have the SFML targets from step 2.
-set(IMGUI_SFML_FIND_SFML OFF)
+    FetchContent_Declare(
+            imgui
+            GIT_REPOSITORY https://github.com/ocornut/imgui.git
+            GIT_TAG v1.89.9
+    )
+    FetchContent_GetProperties(imgui)
+    if(NOT imgui_POPULATED)
+        FetchContent_Populate(imgui)
+    endif()
 
-FetchContent_Declare(
-        ImGui-SFML
-        GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
-        GIT_TAG 2.6.x
-)
-FetchContent_MakeAvailable(ImGui-SFML)
+    set(IMGUI_DIR ${imgui_SOURCE_DIR})
+    set(IMGUI_SFML_FIND_SFML OFF)
+
+    FetchContent_Declare(
+            ImGui-SFML
+            GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
+            GIT_TAG 2.6.x
+    )
+    FetchContent_MakeAvailable(ImGui-SFML)
+endif()
 
 # --- 5. Sources ---
 set(COMMON_SOURCES
@@ -80,77 +85,60 @@ set(COMMON_SOURCES
         engine/behavior_log.cpp
 )
 
-# Conditionally add MinGW _setjmp workaround
-set(SIMULATOR_SOURCES
-        engine/sim.cpp
-        engine/simulator.cpp
-        ${COMMON_SOURCES}
-)
-
-# Add MinGW _setjmp fix if using MinGW/GCC on Windows
-if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    list(APPEND SIMULATOR_SOURCES tools/mingw_setjmp_fix.c)
-    message(STATUS "Adding MinGW _setjmp workaround for SFML FreeType compatibility")
-endif()
-
-add_executable(simulator ${SIMULATOR_SOURCES})
-
-target_include_directories(simulator PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/agents
-        ${CMAKE_CURRENT_SOURCE_DIR}/engine
-        ${CMAKE_CURRENT_SOURCE_DIR}/environment
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools
-)
-
-# --- 6. Linking ---
-target_link_libraries(simulator PRIVATE
-        yaml-cpp
-        ImGui-SFML::ImGui-SFML
-        sfml-graphics
-        sfml-system
-        sfml-window
-)
-
-# MinGW: SFML's bundled FreeType references _setjmp; link mingwex to resolve it.
-# This is needed for FreeType which uses setjmp/longjmp
-# SFML's FreeType is compiled for MSVCRT runtime, so we need to ensure compatibility
-if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    message(STATUS "Detected MinGW/GCC on Windows - fixing _setjmp reference for SFML FreeType")
-    
-    # Get the MinGW library directory
-    get_filename_component(MINGW_BIN_DIR ${CMAKE_C_COMPILER} DIRECTORY)
-    get_filename_component(MINGW_ROOT_DIR ${MINGW_BIN_DIR} DIRECTORY)
-    set(MINGW_LIB_DIR "${MINGW_ROOT_DIR}/lib")
-    message(STATUS "MinGW lib directory: ${MINGW_LIB_DIR}")
-    
-    # Try to find mingwex which provides _setjmp/_longjmp
-    # Search in MinGW lib directory and standard paths
-    find_library(MINGWEX_LIB 
-        NAMES mingwex libmingwex
-        PATHS 
-        ${MINGW_LIB_DIR}
-        ${MINGW_ROOT_DIR}/${CMAKE_C_COMPILER_TARGET}/lib
-        ${CMAKE_C_COMPILER}/../../lib
-        ${CMAKE_C_COMPILER}/../../${CMAKE_C_COMPILER_TARGET}/lib
+# --- 6. Desktop Visualizer (optional; disabled with -DBUILD_VISUALIZER=OFF) ---
+if(BUILD_VISUALIZER)
+    set(SIMULATOR_SOURCES
+            engine/sim.cpp
+            engine/simulator.cpp
+            ${COMMON_SOURCES}
     )
-    
-    if(MINGWEX_LIB)
-        target_link_libraries(simulator PRIVATE ${MINGWEX_LIB})
-        message(STATUS "Found mingwex at: ${MINGWEX_LIB}")
-    else()
-        # Add MinGW lib directory to linker search path
-        target_link_directories(simulator PRIVATE ${MINGW_LIB_DIR})
-        # Link by name - linker will search the added directory
-        target_link_libraries(simulator PRIVATE mingwex)
-        message(STATUS "Linking mingwex by name (searching in ${MINGW_LIB_DIR})")
-    endif()
-    
-    # Force linker to include mingwex by adding it as a linker option
-    # This ensures it's linked even if find_library didn't locate it
-    target_link_options(simulator PRIVATE "-lmingwex")
-endif()
 
-target_compile_definitions(simulator PRIVATE YAML_CPP_STATIC_DEFINE)
+    if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        list(APPEND SIMULATOR_SOURCES tools/mingw_setjmp_fix.c)
+        message(STATUS "Adding MinGW _setjmp workaround for SFML FreeType compatibility")
+    endif()
+
+    add_executable(simulator ${SIMULATOR_SOURCES})
+
+    target_include_directories(simulator PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/agents
+            ${CMAKE_CURRENT_SOURCE_DIR}/engine
+            ${CMAKE_CURRENT_SOURCE_DIR}/environment
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools
+    )
+
+    target_link_libraries(simulator PRIVATE
+            yaml-cpp
+            ImGui-SFML::ImGui-SFML
+            sfml-graphics
+            sfml-system
+            sfml-window
+    )
+
+    if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        message(STATUS "Detected MinGW/GCC on Windows - fixing _setjmp reference for SFML FreeType")
+        get_filename_component(MINGW_BIN_DIR ${CMAKE_C_COMPILER} DIRECTORY)
+        get_filename_component(MINGW_ROOT_DIR ${MINGW_BIN_DIR} DIRECTORY)
+        set(MINGW_LIB_DIR "${MINGW_ROOT_DIR}/lib")
+        find_library(MINGWEX_LIB
+            NAMES mingwex libmingwex
+            PATHS
+            ${MINGW_LIB_DIR}
+            ${MINGW_ROOT_DIR}/${CMAKE_C_COMPILER_TARGET}/lib
+            ${CMAKE_C_COMPILER}/../../lib
+            ${CMAKE_C_COMPILER}/../../${CMAKE_C_COMPILER_TARGET}/lib
+        )
+        if(MINGWEX_LIB)
+            target_link_libraries(simulator PRIVATE ${MINGWEX_LIB})
+        else()
+            target_link_directories(simulator PRIVATE ${MINGW_LIB_DIR})
+            target_link_libraries(simulator PRIVATE mingwex)
+        endif()
+        target_link_options(simulator PRIVATE "-lmingwex")
+    endif()
+
+    target_compile_definitions(simulator PRIVATE YAML_CPP_STATIC_DEFINE)
+endif()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Python extension module: simulation
@@ -161,12 +149,15 @@ target_compile_definitions(simulator PRIVATE YAML_CPP_STATIC_DEFINE)
 find_package(Python COMPONENTS Interpreter Development.Module QUIET)
 
 if(Python_FOUND)
-    FetchContent_Declare(
-            pybind11
-            GIT_REPOSITORY https://github.com/pybind/pybind11.git
-            GIT_TAG        v2.12.0
-    )
-    FetchContent_MakeAvailable(pybind11)
+    find_package(pybind11 CONFIG QUIET)
+    if(NOT pybind11_FOUND)
+        FetchContent_Declare(
+                pybind11
+                GIT_REPOSITORY https://github.com/pybind/pybind11.git
+                GIT_TAG        v2.13.6
+        )
+        FetchContent_MakeAvailable(pybind11)
+    endif()
 
     # navmesh_visualizer.cpp uses full SFML graphics — exclude from the headless module.
     set(HEADLESS_SOURCES ${COMMON_SOURCES})
@@ -190,13 +181,10 @@ if(Python_FOUND)
             ${CMAKE_CURRENT_SOURCE_DIR}/environment
             ${CMAKE_CURRENT_SOURCE_DIR}/tools
             ${CMAKE_CURRENT_SOURCE_DIR}/bindings
-            # SFML headers needed for sf::Vector2f used in store_layout.h;
-            # the module does not call SFML at runtime.
-            $<TARGET_PROPERTY:sfml-system,INTERFACE_INCLUDE_DIRECTORIES>
     )
 
     target_link_libraries(simulation PRIVATE yaml-cpp)
-    target_compile_definitions(simulation PRIVATE YAML_CPP_STATIC_DEFINE)
+    target_compile_definitions(simulation PRIVATE YAML_CPP_STATIC_DEFINE PRICERIOT_HEADLESS)
 
     if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         if(MINGWEX_LIB)

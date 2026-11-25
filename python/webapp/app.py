@@ -9,7 +9,7 @@ from typing import List
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import yaml
 
 _script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,12 +31,15 @@ from .sim_runner import run_simulation_job
 from .sim_storage import sim_job_store
 from .simulation_runner import simulation_runner
 from .storage import session_store
+from .sweep_models import SweepConfig, SweepResult
+from .sweep_runner import execute_sweep, sweep_store
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await session_store.init()
     await sim_job_store.init()
+    await sweep_store.init()
     yield
 
 
@@ -174,7 +177,7 @@ async def _materialize_csv(run_id: str, kind: str) -> str:
     if run.status != RunStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Run is not completed")
 
-    contents = session_store.get_csv(run_id, kind)
+    contents = await session_store.async_get_csv(run_id, kind)
     filename = "transactions.csv" if kind == "transactions" else "customers.csv"
 
     if not contents:
@@ -223,6 +226,113 @@ async def delete_run(run_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Run not found")
     return {"deleted": run_id}
+
+
+class WorkerConfigUpdate(BaseModel):
+    num_stockers: int = Field(..., ge=0, description="Number of shelf-stocking workers")
+    num_cashiers: int = Field(..., ge=0, description="Number of checkout workers")
+    auto_stock_tasks: bool | None = None
+    auto_register_tasks: bool | None = None
+
+
+@app.post("/api/runs/{run_id}/workers", response_model=RunResult)
+async def update_run_workers(run_id: str, body: WorkerConfigUpdate) -> RunResult:
+    """Update worker pool counts on a queued run before execution begins."""
+    run = await session_store.async_get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status != RunStatus.QUEUED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot modify workers for run in '{run.status.value}' state; run must be queued",
+        )
+    updates = {
+        "num_stockers": body.num_stockers,
+        "num_cashiers": body.num_cashiers,
+    }
+    if body.auto_stock_tasks is not None:
+        updates["auto_stock_tasks"] = body.auto_stock_tasks
+    if body.auto_register_tasks is not None:
+        updates["auto_register_tasks"] = body.auto_register_tasks
+    new_config = run.config.model_copy(update=updates)
+    updated = await session_store.async_update_run(run_id, config=new_config)
+    assert updated is not None
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# Parameter Sweeps — Multi-Point Grid Evaluation
+# ---------------------------------------------------------------------------
+
+MAX_SWEEP_POINTS = 64
+
+
+@app.post("/api/sweeps", response_model=SweepResult)
+async def create_sweep(
+    body: SweepConfig,
+    background_tasks: BackgroundTasks,
+    run_async: bool = False,
+) -> SweepResult:
+    """Create and execute a parameter sweep over a Cartesian grid of configs."""
+    if any(v <= 0 for v in body.spawn_intervals):
+        raise HTTPException(status_code=400, detail="All spawn_intervals must be > 0")
+    if any(v < 0 or v > 1 for v in body.mission_probabilities):
+        raise HTTPException(status_code=400, detail="All mission_probabilities must be in [0, 1]")
+    if any(v < 0 for v in body.num_stockers) or any(v < 0 for v in body.num_cashiers):
+        raise HTTPException(status_code=400, detail="Worker counts must be >= 0")
+    if any(v <= 0 for v in body.price_multipliers):
+        raise HTTPException(status_code=400, detail="All price_multipliers must be > 0")
+    if body.grid_size() > MAX_SWEEP_POINTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sweep grid has {body.grid_size()} points; maximum allowed is {MAX_SWEEP_POINTS}",
+        )
+
+    sweep_id = await sweep_store.create_sweep(body)
+    if run_async:
+        background_tasks.add_task(execute_sweep, sweep_id)
+        sweep = await sweep_store.get_sweep(sweep_id)
+        assert sweep is not None
+        return sweep
+
+    sweep = await execute_sweep(sweep_id)
+    assert sweep is not None
+    return sweep
+
+
+@app.get("/api/sweeps", response_model=List[SweepResult])
+async def list_sweeps() -> List[SweepResult]:
+    return await sweep_store.list_sweeps()
+
+
+@app.get("/api/sweeps/{sweep_id}", response_model=SweepResult)
+async def get_sweep(sweep_id: str) -> SweepResult:
+    sweep = await sweep_store.get_sweep(sweep_id)
+    if sweep is None:
+        raise HTTPException(status_code=404, detail="Sweep not found")
+    return sweep
+
+
+@app.get("/api/sweeps/{sweep_id}/results.csv")
+async def download_sweep_csv(sweep_id: str):
+    sweep = await sweep_store.get_sweep(sweep_id)
+    if sweep is None:
+        raise HTTPException(status_code=404, detail="Sweep not found")
+    if not sweep.results_csv:
+        raise HTTPException(status_code=404, detail="Sweep CSV not available")
+    return Response(
+        content=sweep.results_csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="sweep_{sweep_id}_results.csv"'},
+    )
+
+
+@app.delete("/api/sweeps/{sweep_id}", status_code=204)
+async def delete_sweep(sweep_id: str):
+    deleted = await sweep_store.delete_sweep(sweep_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Sweep not found")
+    return Response(status_code=204)
 
 
 
